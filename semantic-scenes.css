@@ -1,0 +1,11 @@
+.scene-stage{width:100%;display:flex;align-items:center;justify-content:center;gap:16px;position:relative;z-index:1}
+.scene-role{width:118px;height:118px;display:grid;place-items:center;border:3px solid rgba(47,40,80,.78);border-radius:25px;background:rgba(255,255,255,.7);box-shadow:0 9px 0 rgba(47,40,80,.12);font-size:66px;line-height:1}
+.scene-role-main{background:#fff;transform:rotate(3deg) scale(1.07)}
+.scene-arrow{max-width:105px;color:#332c50;font-size:18px;font-weight:950;text-align:center}
+.scene-stage-action .scene-arrow{font-size:32px}
+.scene-stage-contrast .scene-role:first-child{filter:grayscale(1);opacity:.6;transform:scale(.8)}
+.scene-caption{position:absolute;z-index:2;left:14px;right:14px;bottom:14px;padding:9px 12px;border:2px solid rgba(47,40,80,.8);border-radius:14px;background:rgba(255,255,255,.95);text-align:left;box-shadow:0 7px 14px rgba(68,47,100,.12)}
+.scene-caption strong,.scene-caption span{display:block}
+.scene-caption strong{font-size:14px;font-weight:950}
+.scene-caption span{margin-top:3px;color:#5f5776;font-size:12px;font-weight:750}
+@media(max-width:720px){.scene{min-height:290px;padding-left:10px;padding-right:10px}.scene-role{width:100px;height:100px;font-size:57px}.scene-arrow{max-width:76px;font-size:14px}}

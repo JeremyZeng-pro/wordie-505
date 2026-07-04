@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#7657ff" />
+  <meta name="description" content="词萌星球：包含505个英语入门词汇的离线学习应用" />
+  <title>词萌星球 · 505词离线版</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=4" />
+  <link rel="stylesheet" href="semantic-scenes.css?v=4" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="app-header">
+      <button class="brand" data-route="home" aria-label="返回首页"><span class="brand-mark">W</span><span><b>词萌星球</b><small>505词离线版</small></span></button>
+      <div class="header-actions"><span id="offline-badge" class="offline-badge">离线可用</span><span class="key-pill">🔑 <b id="key-count">0</b></span></div>
+    </header>
+    <section id="app" class="app-view" aria-live="polite"></section>
+    <nav class="bottom-nav" aria-label="主要页面">
+      <button data-route="home"><span>🏠</span>首页</button>
+      <button data-route="course"><span>📚</span>课程</button>
+      <button data-route="box"><span>🎁</span>盲盒</button>
+      <button data-route="collection"><span>✨</span>收藏</button>
+      <button data-route="growth"><span>🌱</span>成长</button>
+    </nav>
+  </main>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="core.js?v=4"></script>
+  <script src="data.js?v=4"></script>
+  <script src="app.js?v=4"></script>
+</body>
+</html>

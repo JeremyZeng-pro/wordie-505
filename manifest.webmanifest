@@ -1,0 +1,9 @@
+{
+  "name": "词萌星球 · 505词离线版",
+  "short_name": "词萌星球",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f7f4ff",
+  "theme_color": "#7657ff",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
