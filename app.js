@@ -116,6 +116,7 @@ function startLesson(index) {
   navigate("learn", { lesson: index });
 }
 function renderScene(word) {
+  if (word.image) return `<div class="scene scene-image"><img class="word-scene-image" src="${word.image}" alt="${word.word}词义情境图" loading="eager"><div class="scene-caption"><strong>${word.art.sceneCaption}</strong><span>${word.example}</span></div></div>`;
   return `<div class="scene scene-${word.art.style}"><span class="scene-sticker">${word.art.sticker}</span><span class="scene-note">${word.art.note}</span><div class="scene-stage scene-stage-${word.art.visualType}"><span class="scene-role">${word.art.leftEmoji}</span><b class="scene-arrow">${word.art.arrow}</b><span class="scene-role scene-role-main">${word.art.rightEmoji}</span></div><div class="scene-caption"><strong>${word.art.sceneCaption}</strong><span>${word.art.bubble}</span></div></div>`;
 }
 function renderLearn() {
@@ -249,6 +250,6 @@ document.addEventListener("input", event => {
 window.addEventListener("online", () => { document.querySelector("#offline-badge").textContent = "已联网"; });
 window.addEventListener("offline", () => { document.querySelector("#offline-badge").textContent = "离线可用"; });
 window.addEventListener("beforeunload", stopActiveRecording);
-if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=4").catch(() => {});
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=5").catch(() => {});
 saveState();
 navigate("home");
