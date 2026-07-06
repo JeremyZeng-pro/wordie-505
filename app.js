@@ -82,6 +82,17 @@ function autoPlayWord(id, context) {
   const player = new Audio(audioPath(id));
   player.play().catch(() => {});
 }
+function attachWordSpeaker(id) {
+  const title = app.querySelector(".word-title");
+  if (!title || app.querySelector(".word-speaker")) return;
+  const speaker = document.createElement("button");
+  speaker.className = "word-speaker";
+  speaker.dataset.action = "play-word";
+  speaker.dataset.id = String(id);
+  speaker.setAttribute("aria-label", "播放单词发音");
+  speaker.textContent = "🔊";
+  title.insertAdjacentElement("afterend", speaker);
+}
 function playSentence(id) {
   const filename = (`000${id}`).slice(-3);
   const player = new Audio(`assets/sentences/${filename}.m4a`);
@@ -157,6 +168,7 @@ function renderLearn() {
   const voiceDone = state.voiceAttempts.includes(word.id);
   const recordingUrl = recordingUrls[word.id];
   app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 新词 ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><span class="tag">${word.pos} · 拼写 ${word.focus}</span><h1 class="word-title">${word.word}</h1><div class="phonetic">${word.phonetic}</div>${renderScene(word)}<div class="meaning">${word.meaning}</div>${renderExample(word)}<div class="tip">💡 ${word.tip}</div></article><div class="button-row learn-actions"><button class="secondary" data-action="play-word" data-id="${word.id}">🔊 听发音</button><button class="secondary" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "⏹ 正在录音…" : voiceDone ? "✓ 重新录音" : "🎙️ 跟读录音"}</button><button class="primary" data-action="remember-word" ${voiceDone ? "" : "disabled"}>我记住了</button></div>${recordingUrl ? `<div class="record-panel"><div class="record-status">你的离线录音（未上传）</div><audio controls src="${recordingUrl}"></audio></div>` : `<div class="record-panel"><div class="record-status">首次点击“跟读录音”时，浏览器会请求麦克风权限。</div></div>`}`;
+  attachWordSpeaker(word.id);
   autoPlayWord(word.id, "learn");
 }
 
@@ -231,6 +243,7 @@ function renderWord() {
   const word = catalog.find(item => item.id === Number(routeState.id));
   if (!word) return navigate("course");
   app.innerHTML = `<div class="eyebrow">WORD #${(`000${word.id}`).slice(-3)}</div><article class="learning-card"><span class="tag">${word.pos} · 拼写 ${word.focus}</span><h1 class="word-title">${word.word}</h1><div class="phonetic">${word.phonetic}</div>${renderScene(word)}<div class="meaning">${word.meaning}</div>${renderExample(word)}<div class="tip">💡 ${word.tip}</div><p class="muted" style="font-size:11px;margin-top:14px">词表原文：${word.raw} · 自然拼读分组：${word.phonicsGroup}</p></article><div class="button-row learn-actions"><button class="secondary wide" data-action="play-word" data-id="${word.id}">🔊 播放离线发音</button><button class="ghost wide" data-route="course">返回课程</button></div>`;
+  attachWordSpeaker(word.id);
   autoPlayWord(word.id, "word");
 }
 function startReview() {
@@ -248,6 +261,7 @@ function renderReview() {
   const word = reviewQueue[reviewIndex];
   const review = state.reviews[word.id] || { stage: 0 };
   app.innerHTML = `<div class="eyebrow">间隔复习 ${reviewIndex + 1}/${reviewQueue.length} · 第${review.stage + 1}轮</div><article class="review-card"><span class="tag">先回想，再揭晓</span><h2>${word.meaning}</h2><p class="muted">请说出英文单词，并尝试读出例句。</p>${reviewRevealed ? `<h1 class="word-title">${word.word}</h1><div class="phonetic">${word.phonetic}</div>${renderScene(word)}${renderExample(word)}<div class="review-actions"><button class="review-hard" data-action="grade-review" data-result="hard">还不熟 · 10分钟后再来</button><button class="review-good" data-action="grade-review" data-result="good">记住了 · 按计划延后</button></div>` : `<button class="primary wide reveal-answer" data-action="reveal-review">查看答案</button>`}</article>`;
+  if (reviewRevealed) attachWordSpeaker(word.id);
 }
 function renderBox() {
   app.innerHTML = `<div class="eyebrow">WORDIE BLIND BOX</div><h1 class="page-title">努力兑换惊喜</h1><p class="muted">只有完成学习检测才能获得钥匙。每次开启必有收获。</p><div class="wallet"><span class="key-pill">🔑 ${state.keys}</span><span class="dust-pill">✨ 星尘 ${state.starDust}</span></div><div class="box-stage section"><div><div id="box-emoji" class="box-emoji">🎁</div><h2 id="box-title">你有 ${state.keys} 把学习钥匙</h2><p id="box-copy" class="muted">10套、60个原创潮玩角色等待收集。</p><button class="primary" data-action="open-box" ${state.keys ? "" : "disabled"}>消耗1把钥匙开启</button></div></div>${state.keys ? "" : `<button class="secondary wide section" data-action="start-home">通过学习获得钥匙</button>`}<div class="panel section"><b>规则公开</b><p class="muted" style="margin:8px 0 0">不售卖钥匙 · 不看广告换抽取 · 每课最多获得一次 · 重复角色转化为星尘</p></div>`;
@@ -315,6 +329,6 @@ document.addEventListener("input", event => {
 window.addEventListener("online", () => { document.querySelector("#offline-badge").textContent = "已联网"; });
 window.addEventListener("offline", () => { document.querySelector("#offline-badge").textContent = "离线可用"; });
 window.addEventListener("beforeunload", stopActiveRecording);
-if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=11").catch(() => {});
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=12").catch(() => {});
 saveState();
 navigate("home");
