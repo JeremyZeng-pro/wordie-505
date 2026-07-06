@@ -44,10 +44,33 @@
     ];
   }
   function defaultState() {
-    return { learned: [], voiceAttempts: [], keys: 0, starDust: 0, collection: [], lessonSize: 5, currentLesson: 0, activeLesson: 0, completedLessons: [], rewardedLessons: [], bestScores: {} };
+    return { learned: [], voiceAttempts: [], keys: 0, starDust: 0, collection: [], lessonSize: 5, currentLesson: 0, activeLesson: 0, completedLessons: [], rewardedLessons: [], bestScores: {}, reviews: {} };
   }
-  function normalizeState(value) { return Object.assign(defaultState(), value || {}); }
+  function normalizeState(value) {
+    const state = Object.assign(defaultState(), value || {});
+    state.reviews = Object.assign({}, state.reviews || {});
+    state.learned.forEach(id => { if (!state.reviews[id]) state.reviews[id] = { stage: 0, dueAt: Date.now(), correct: 0, wrong: 0 }; });
+    return state;
+  }
   function addUnique(list, value) { return list.includes(value) ? list.slice() : list.concat(value); }
+  const REVIEW_DAYS = [0, 1, 3, 7, 15, 30];
+  function scheduleReview(stateInput, wordId, now = Date.now()) {
+    const state = Object.assign(defaultState(), stateInput || {}, { reviews: Object.assign({}, stateInput?.reviews || {}) });
+    if (state.reviews[wordId]) return state;
+    return Object.assign({}, state, { reviews: Object.assign({}, state.reviews, { [wordId]: { stage: 0, dueAt: now, correct: 0, wrong: 0 } }) });
+  }
+  function dueReviewIds(stateInput, now = Date.now()) {
+    const state = normalizeState(stateInput);
+    return Object.keys(state.reviews).filter(id => Number(state.reviews[id].dueAt || 0) <= now).map(Number);
+  }
+  function gradeReview(stateInput, wordId, remembered, now = Date.now()) {
+    const state = scheduleReview(stateInput, wordId, now);
+    const current = state.reviews[wordId];
+    const stage = remembered ? Math.min(current.stage + 1, REVIEW_DAYS.length - 1) : 0;
+    const delay = remembered ? REVIEW_DAYS[stage] * 86400000 : 10 * 60000;
+    const next = { stage, dueAt: now + delay, correct: current.correct + (remembered ? 1 : 0), wrong: current.wrong + (remembered ? 0 : 1) };
+    return Object.assign({}, state, { reviews: Object.assign({}, state.reviews, { [wordId]: next }) });
+  }
   function canAwardKey(score, voiceCompleted, learnedIds, lessonWordIds, alreadyRewarded) {
     return score >= 80 && voiceCompleted && lessonWordIds.every(id => learnedIds.includes(id)) && !alreadyRewarded;
   }
@@ -90,5 +113,5 @@
   }
   function audioPath(id) { return `assets/audio/${(`000${id}`).slice(-3)}.m4a`; }
 
-  root.WORDIE_CORE = { LESSON_SIZE, normalizeLessonSize, lessonCount, getLesson, lessonMeta, buildQuiz, defaultState, normalizeState, addUnique, canAwardKey, finishLesson, openBox, search, audioPath };
+  root.WORDIE_CORE = { LESSON_SIZE, REVIEW_DAYS, normalizeLessonSize, lessonCount, getLesson, lessonMeta, buildQuiz, defaultState, normalizeState, addUnique, scheduleReview, dueReviewIds, gradeReview, canAwardKey, finishLesson, openBox, search, audioPath };
 })(typeof window === "undefined" ? globalThis : window);
