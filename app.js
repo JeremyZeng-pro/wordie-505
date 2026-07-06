@@ -28,6 +28,7 @@ const recordingUrls = {};
 let reviewQueue = [];
 let reviewIndex = 0;
 let reviewRevealed = false;
+let lastAutoWordKey = "";
 
 function loadState() {
   try {
@@ -62,6 +63,7 @@ function setActiveNav(name) {
 }
 function navigate(name, payload = {}) {
   if (routeState.name !== name) stopActiveRecording();
+  if (name === "word" && routeState.name !== "word") lastAutoWordKey = "";
   routeState = Object.assign({ name }, payload);
   setActiveNav(["learn", "quiz", "word"].includes(name) ? "course" : name);
   const views = { home: renderHome, course: renderCourse, learn: renderLearn, quiz: renderQuiz, word: renderWord, review: renderReview, box: renderBox, collection: renderCollection, growth: renderGrowth };
@@ -72,6 +74,13 @@ function audioPath(id) { return core.audioPath(id); }
 function playWord(id) {
   const player = new Audio(audioPath(id));
   player.play().catch(() => showToast("无法播放发音，请使用一键启动版打开"));
+}
+function autoPlayWord(id, context) {
+  const key = `${context}-${id}`;
+  if (lastAutoWordKey === key) return;
+  lastAutoWordKey = key;
+  const player = new Audio(audioPath(id));
+  player.play().catch(() => {});
 }
 function playSentence(id) {
   const filename = (`000${id}`).slice(-3);
@@ -131,6 +140,7 @@ function startLesson(index) {
   lessonWords = core.getLesson(catalog, index, lessonSize());
   const first = lessonWords.findIndex(word => !state.learned.includes(word.id));
   learnPosition = first < 0 ? 0 : first;
+  lastAutoWordKey = "";
   navigate("learn", { lesson: index });
 }
 function renderScene(word) {
@@ -147,6 +157,7 @@ function renderLearn() {
   const voiceDone = state.voiceAttempts.includes(word.id);
   const recordingUrl = recordingUrls[word.id];
   app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 新词 ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><span class="tag">${word.pos} · 拼写 ${word.focus}</span><h1 class="word-title">${word.word}</h1><div class="phonetic">${word.phonetic}</div>${renderScene(word)}<div class="meaning">${word.meaning}</div>${renderExample(word)}<div class="tip">💡 ${word.tip}</div></article><div class="button-row learn-actions"><button class="secondary" data-action="play-word" data-id="${word.id}">🔊 听发音</button><button class="secondary" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "⏹ 正在录音…" : voiceDone ? "✓ 重新录音" : "🎙️ 跟读录音"}</button><button class="primary" data-action="remember-word" ${voiceDone ? "" : "disabled"}>我记住了</button></div>${recordingUrl ? `<div class="record-panel"><div class="record-status">你的离线录音（未上传）</div><audio controls src="${recordingUrl}"></audio></div>` : `<div class="record-panel"><div class="record-status">首次点击“跟读录音”时，浏览器会请求麦克风权限。</div></div>`}`;
+  autoPlayWord(word.id, "learn");
 }
 
 async function recordWord(wordId, callback, duration = 2600) {
@@ -220,6 +231,7 @@ function renderWord() {
   const word = catalog.find(item => item.id === Number(routeState.id));
   if (!word) return navigate("course");
   app.innerHTML = `<div class="eyebrow">WORD #${(`000${word.id}`).slice(-3)}</div><article class="learning-card"><span class="tag">${word.pos} · 拼写 ${word.focus}</span><h1 class="word-title">${word.word}</h1><div class="phonetic">${word.phonetic}</div>${renderScene(word)}<div class="meaning">${word.meaning}</div>${renderExample(word)}<div class="tip">💡 ${word.tip}</div><p class="muted" style="font-size:11px;margin-top:14px">词表原文：${word.raw} · 自然拼读分组：${word.phonicsGroup}</p></article><div class="button-row learn-actions"><button class="secondary wide" data-action="play-word" data-id="${word.id}">🔊 播放离线发音</button><button class="ghost wide" data-route="course">返回课程</button></div>`;
+  autoPlayWord(word.id, "word");
 }
 function startReview() {
   reviewQueue = core.dueReviewIds(state).map(id => catalog.find(word => word.id === id)).filter(Boolean).slice(0, 20);
@@ -303,6 +315,6 @@ document.addEventListener("input", event => {
 window.addEventListener("online", () => { document.querySelector("#offline-badge").textContent = "已联网"; });
 window.addEventListener("offline", () => { document.querySelector("#offline-badge").textContent = "离线可用"; });
 window.addEventListener("beforeunload", stopActiveRecording);
-if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=10").catch(() => {});
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=11").catch(() => {});
 saveState();
 navigate("home");
