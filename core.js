@@ -1,14 +1,16 @@
 (function attachWordieCore(root) {
   const LESSON_SIZE = 5;
 
-  function lessonCount(catalog) { return Math.ceil(catalog.length / LESSON_SIZE); }
-  function getLesson(catalog, index) {
-    const max = lessonCount(catalog) - 1;
+  function normalizeLessonSize(size) { return [5, 10, 15, 20].includes(Number(size)) ? Number(size) : LESSON_SIZE; }
+  function lessonCount(catalog, size = LESSON_SIZE) { return Math.ceil(catalog.length / normalizeLessonSize(size)); }
+  function getLesson(catalog, index, size = LESSON_SIZE) {
+    const lessonSize = normalizeLessonSize(size);
+    const max = lessonCount(catalog, lessonSize) - 1;
     const safe = Math.max(0, Math.min(Number(index) || 0, max));
-    return catalog.slice(safe * LESSON_SIZE, safe * LESSON_SIZE + LESSON_SIZE);
+    return catalog.slice(safe * lessonSize, safe * lessonSize + lessonSize);
   }
-  function lessonMeta(catalog, index) {
-    const words = getLesson(catalog, index);
+  function lessonMeta(catalog, index, size = LESSON_SIZE) {
+    const words = getLesson(catalog, index, size);
     const sounds = [...new Set(words.map(word => word.phonicsGroup || "待归类"))];
     return {
       index,
@@ -26,8 +28,9 @@
     });
     return options.sort((a, b) => (a.length + correct.length) % 3 - (b.length + correct.length) % 3);
   }
-  function buildQuiz(catalog, index) {
-    const [a, b, c, d, e] = getLesson(catalog, index);
+  function buildQuiz(catalog, index, size = LESSON_SIZE) {
+    const words = getLesson(catalog, index, size);
+    const [a, b, c, d, e] = [words[0], words[Math.min(1, words.length - 1)], words[Math.min(2, words.length - 1)], words[Math.min(3, words.length - 1)], words[words.length - 1]];
     const escaped = d.word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const context = new RegExp(escaped, "i").test(d.example)
       ? d.example.replace(new RegExp(escaped, "i"), "____")
@@ -41,7 +44,7 @@
     ];
   }
   function defaultState() {
-    return { learned: [], voiceAttempts: [], keys: 0, starDust: 0, collection: [], currentLesson: 0, activeLesson: 0, completedLessons: [], rewardedLessons: [], bestScores: {} };
+    return { learned: [], voiceAttempts: [], keys: 0, starDust: 0, collection: [], lessonSize: 5, currentLesson: 0, activeLesson: 0, completedLessons: [], rewardedLessons: [], bestScores: {} };
   }
   function normalizeState(value) { return Object.assign(defaultState(), value || {}); }
   function addUnique(list, value) { return list.includes(value) ? list.slice() : list.concat(value); }
@@ -87,5 +90,5 @@
   }
   function audioPath(id) { return `assets/audio/${(`000${id}`).slice(-3)}.m4a`; }
 
-  root.WORDIE_CORE = { LESSON_SIZE, lessonCount, getLesson, lessonMeta, buildQuiz, defaultState, normalizeState, addUnique, canAwardKey, finishLesson, openBox, search, audioPath };
+  root.WORDIE_CORE = { LESSON_SIZE, normalizeLessonSize, lessonCount, getLesson, lessonMeta, buildQuiz, defaultState, normalizeState, addUnique, canAwardKey, finishLesson, openBox, search, audioPath };
 })(typeof window === "undefined" ? globalThis : window);
