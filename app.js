@@ -160,10 +160,15 @@ function startLesson(index) {
   lastAutoWordKey = "";
   navigate("learn", { lesson: index });
 }
+function highlightTarget(sentence, target) {
+  const index = String(sentence).toLowerCase().indexOf(String(target).toLowerCase());
+  if (index < 0) return sentence;
+  return `${sentence.slice(0, index)}<span class="target-word">${sentence.slice(index, index + target.length)}</span>${sentence.slice(index + target.length)}`;
+}
 function renderScene(word, includeExample = false, includeRemember = false, rememberEnabled = false) {
   const headline = includeExample ? word.example : word.art.sceneCaption;
   const subline = includeExample ? word.exampleCn : word.art.bubble;
-  const examplePanel = includeExample ? `<div class="example-panel"><div class="scene-example-row"><strong>${headline}</strong><button class="caption-speaker" data-action="play-sentence" data-id="${word.id}" aria-label="播放例句">🔊</button><button class="caption-follow" data-action="record-sentence" data-id="${word.id}">🎙️ 跟读</button></div><span>${subline}</span></div>` : "";
+  const examplePanel = includeExample ? `<div class="example-panel"><div class="scene-example-row"><strong>${highlightTarget(headline, word.word)}</strong><button class="caption-speaker" data-action="play-sentence" data-id="${word.id}" aria-label="播放例句">🔊</button><button class="caption-follow" data-action="record-sentence" data-id="${word.id}">🎙️ 跟读</button></div><span>${subline}</span></div>` : "";
   const caption = includeExample ? "" : `<div class="scene-caption"><strong>${headline}</strong><span>${subline}</span></div>`;
   const remember = includeRemember ? `<button class="scene-remember" data-action="remember-word" ${rememberEnabled ? "" : "disabled"}>${rememberEnabled ? "我记住了" : "完成单词和例句跟读后解锁"}</button>` : "";
   const rememberClass = includeRemember ? " scene-with-remember" : "";
@@ -396,6 +401,6 @@ document.addEventListener("input", event => {
 window.addEventListener("online", () => { document.querySelector("#offline-badge").textContent = "已联网"; });
 window.addEventListener("offline", () => { document.querySelector("#offline-badge").textContent = "离线可用"; });
 window.addEventListener("beforeunload", stopActiveRecording);
-if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=20", { updateViaCache: "none" }).catch(() => {});
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=21", { updateViaCache: "none" }).catch(() => {});
 saveState();
 navigate("home");

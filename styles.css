@@ -15,6 +15,7 @@
 .example-panel{margin:-5px 0 18px;padding:13px 14px;border:1px solid var(--line);border-radius:15px;background:#fff;box-shadow:0 5px 16px rgba(31,27,54,.05)}.example-panel>span{display:block;margin-top:6px;color:#5f5776;line-height:1.5}
 /* 学习卡字号再提升约15% */
 .learning-card .word-title{font-size:48px}.learning-card .word-meta .phonetic{font-size:17px}.learning-card .word-pos{font-size:15px}.learning-card>.meaning{font-size:21px}.learning-card .scene-caption strong,.learning-card .example-panel strong{font-size:18px}.learning-card .scene-caption span,.learning-card .example-panel>span{font-size:16px}.learning-card .inline-follow{font-size:15px}.learning-card .caption-speaker,.learning-card .caption-follow{font-size:14px}.learning-card .tip{font-size:14px}.learning-card .scene-remember{font-size:17px}
+.target-word{color:#e5394f;font-weight:950}
 
 /* 2026 youthful minimal visual refresh */
 :root{--ink:#1e1d27;--muted:#777482;--paper:#f7f7fa;--purple:#6c55e8;--purple-dark:#5240bb;--pink:#e986b2;--yellow:#f2ce70;--mint:#76cdb7;--line:#e9e8ee;--shadow:0 10px 30px rgba(31,27,54,.07)}
