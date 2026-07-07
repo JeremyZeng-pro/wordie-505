@@ -73,7 +73,10 @@ function navigate(name, payload = {}) {
 function audioPath(id) { return core.audioPath(id); }
 function playWord(id) {
   const player = new Audio(audioPath(id));
-  player.play().catch(() => showToast("无法播放发音，请使用一键启动版打开"));
+  return new Promise(resolve => {
+    player.addEventListener("ended", () => resolve(true), { once: true });
+    player.play().catch(() => { showToast("无法播放发音，请使用一键启动版打开"); resolve(false); });
+  });
 }
 function autoPlayWord(id, context) {
   const key = `${context}-${id}`;
@@ -96,7 +99,10 @@ function attachWordSpeaker(id) {
 function playSentence(id) {
   const filename = (`000${id}`).slice(-3);
   const player = new Audio(`assets/sentences/${filename}.m4a`);
-  player.play().catch(() => showToast("无法播放例句，请使用一键启动版打开"));
+  return new Promise(resolve => {
+    player.addEventListener("ended", () => resolve(true), { once: true });
+    player.play().catch(() => { showToast("无法播放例句，请使用一键启动版打开"); resolve(false); });
+  });
 }
 function renderExample(word) {
   const key = `sentence-${word.id}`;
@@ -154,9 +160,11 @@ function startLesson(index) {
   lastAutoWordKey = "";
   navigate("learn", { lesson: index });
 }
-function renderScene(word) {
-  if (word.image) return `<div class="scene scene-image"><img class="word-scene-image" src="${word.image}" alt="${word.word}词义情境图" loading="eager"><div class="scene-caption"><strong>${word.art.sceneCaption}</strong><span>${word.example}</span></div></div>`;
-  return `<div class="scene scene-${word.art.style}"><span class="scene-sticker">${word.art.sticker}</span><span class="scene-note">${word.art.note}</span><div class="scene-stage scene-stage-${word.art.visualType}"><span class="scene-role">${word.art.leftEmoji}</span><b class="scene-arrow">${word.art.arrow}</b><span class="scene-role scene-role-main">${word.art.rightEmoji}</span></div><div class="scene-caption"><strong>${word.art.sceneCaption}</strong><span>${word.art.bubble}</span></div></div>`;
+function renderScene(word, includeExample = false) {
+  const headline = includeExample ? word.example : word.art.sceneCaption;
+  const subline = includeExample ? word.exampleCn : word.art.bubble;
+  if (word.image) return `<div class="scene scene-image"><img class="word-scene-image" src="${word.image}" alt="${word.word}词义情境图" loading="eager"><div class="scene-caption"><strong>${headline}</strong><span>${subline}</span></div></div>`;
+  return `<div class="scene scene-${word.art.style}"><span class="scene-sticker">${word.art.sticker}</span><span class="scene-note">${word.art.note}</span><div class="scene-stage scene-stage-${word.art.visualType}"><span class="scene-role">${word.art.leftEmoji}</span><b class="scene-arrow">${word.art.arrow}</b><span class="scene-role scene-role-main">${word.art.rightEmoji}</span></div><div class="scene-caption"><strong>${headline}</strong><span>${subline}</span></div></div>`;
 }
 function renderLearn() {
   if (!lessonWords.length) { lessonIndex = state.activeLesson; lessonWords = core.getLesson(catalog, lessonIndex, lessonSize()); }
@@ -167,7 +175,8 @@ function renderLearn() {
   const word = lessonWords[learnPosition];
   const voiceDone = state.voiceAttempts.includes(word.id);
   const recordingUrl = recordingUrls[word.id];
-  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 新词 ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><span class="tag">${word.pos} · 拼写 ${word.focus}</span><h1 class="word-title">${word.word}</h1><div class="phonetic">${word.phonetic}</div>${renderScene(word)}<div class="meaning">${word.meaning}</div>${renderExample(word)}<div class="tip">💡 ${word.tip}</div></article><div class="button-row learn-actions"><button class="secondary" data-action="play-word" data-id="${word.id}">🔊 听发音</button><button class="secondary" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "⏹ 正在录音…" : voiceDone ? "✓ 重新录音" : "🎙️ 跟读录音"}</button><button class="primary" data-action="remember-word" ${voiceDone ? "" : "disabled"}>我记住了</button></div>${recordingUrl ? `<div class="record-panel"><div class="record-status">你的离线录音（未上传）</div><audio controls src="${recordingUrl}"></audio></div>` : `<div class="record-panel"><div class="record-status">首次点击“跟读录音”时，浏览器会请求麦克风权限。</div></div>`}`;
+  const sentenceRecording = recordingWordId === `sentence-${word.id}` && mediaRecorder?.state === "recording";
+  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 新词 ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><h1 class="word-title">${word.word}</h1><div class="word-meta"><span class="phonetic">音标 ${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">常见中文意思：${word.meaning}</div>${renderScene(word, true)}<div class="tip">💡 ${word.tip}</div></article><div class="button-row learn-actions"><button class="secondary" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "🎙️ 现在读单词…" : voiceDone ? "✓ 再读单词" : "🎙️ 跟读单词"}</button><button class="secondary" data-action="record-sentence" data-id="${word.id}">${sentenceRecording ? "🎙️ 现在读例句…" : "🎙️ 跟读例句"}</button><button class="primary" data-action="remember-word" ${voiceDone ? "" : "disabled"}>我记住了</button></div>${recordingUrl ? `<div class="record-panel"><div class="record-status">你的离线录音（未上传）</div><audio controls src="${recordingUrl}"></audio></div>` : `<div class="record-panel"><div class="record-status">首次跟读时，浏览器会请求麦克风权限。</div></div>`}`;
   attachWordSpeaker(word.id);
   autoPlayWord(word.id, "learn");
 }
@@ -207,9 +216,19 @@ async function recordWord(wordId, callback, duration = 2600) {
     showToast(error.name === "NotAllowedError" ? "请在浏览器设置中允许麦克风" : "无法启动录音，请检查麦克风");
   }
 }
-function recordSentence(wordId) {
-  playSentence(wordId);
-  return recordWord(`sentence-${wordId}`, null, 6500);
+async function followWord(wordId, callback) {
+  showToast("请先听标准单词发音");
+  if (await playWord(wordId)) {
+    showToast("现在请读单词");
+    return recordWord(wordId, callback);
+  }
+}
+async function recordSentence(wordId) {
+  showToast("请先听标准例句");
+  if (await playSentence(wordId)) {
+    showToast("现在请读完整例句");
+    return recordWord(`sentence-${wordId}`, null, 6500);
+  }
 }
 
 function startQuiz() {
@@ -242,7 +261,7 @@ function renderQuizResult() {
 function renderWord() {
   const word = catalog.find(item => item.id === Number(routeState.id));
   if (!word) return navigate("course");
-  app.innerHTML = `<div class="eyebrow">WORD #${(`000${word.id}`).slice(-3)}</div><article class="learning-card"><span class="tag">${word.pos} · 拼写 ${word.focus}</span><h1 class="word-title">${word.word}</h1><div class="phonetic">${word.phonetic}</div>${renderScene(word)}<div class="meaning">${word.meaning}</div>${renderExample(word)}<div class="tip">💡 ${word.tip}</div><p class="muted" style="font-size:11px;margin-top:14px">词表原文：${word.raw} · 自然拼读分组：${word.phonicsGroup}</p></article><div class="button-row learn-actions"><button class="secondary wide" data-action="play-word" data-id="${word.id}">🔊 播放离线发音</button><button class="ghost wide" data-route="course">返回课程</button></div>`;
+  app.innerHTML = `<div class="eyebrow">WORD #${(`000${word.id}`).slice(-3)}</div><article class="learning-card"><h1 class="word-title">${word.word}</h1><div class="word-meta"><span class="phonetic">音标 ${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">常见中文意思：${word.meaning}</div>${renderScene(word, true)}<div class="tip">💡 ${word.tip}</div><p class="muted" style="font-size:11px;margin-top:14px">词表原文：${word.raw} · 自然拼读分组：${word.phonicsGroup}</p></article><div class="button-row learn-actions"><button class="secondary" data-action="record-word" data-id="${word.id}">🎙️ 跟读单词</button><button class="secondary" data-action="record-sentence" data-id="${word.id}">🎙️ 跟读例句</button><button class="ghost wide" data-route="course">返回课程</button></div>`;
   attachWordSpeaker(word.id);
   autoPlayWord(word.id, "word");
 }
@@ -260,7 +279,7 @@ function renderReview() {
   }
   const word = reviewQueue[reviewIndex];
   const review = state.reviews[word.id] || { stage: 0 };
-  app.innerHTML = `<div class="eyebrow">间隔复习 ${reviewIndex + 1}/${reviewQueue.length} · 第${review.stage + 1}轮</div><article class="review-card"><span class="tag">先回想，再揭晓</span><h2>${word.meaning}</h2><p class="muted">请说出英文单词，并尝试读出例句。</p>${reviewRevealed ? `<h1 class="word-title">${word.word}</h1><div class="phonetic">${word.phonetic}</div>${renderScene(word)}${renderExample(word)}<div class="review-actions"><button class="review-hard" data-action="grade-review" data-result="hard">还不熟 · 10分钟后再来</button><button class="review-good" data-action="grade-review" data-result="good">记住了 · 按计划延后</button></div>` : `<button class="primary wide reveal-answer" data-action="reveal-review">查看答案</button>`}</article>`;
+  app.innerHTML = `<div class="eyebrow">间隔复习 ${reviewIndex + 1}/${reviewQueue.length} · 第${review.stage + 1}轮</div><article class="review-card"><span class="tag">先回想，再揭晓</span><h2>${word.meaning}</h2><p class="muted">请说出英文单词，并尝试读出例句。</p>${reviewRevealed ? `<h1 class="word-title">${word.word}</h1><div class="phonetic">${word.phonetic}</div>${renderScene(word, true)}<div class="review-actions"><button class="review-hard" data-action="grade-review" data-result="hard">还不熟 · 10分钟后再来</button><button class="review-good" data-action="grade-review" data-result="good">记住了 · 按计划延后</button></div>` : `<button class="primary wide reveal-answer" data-action="reveal-review">查看答案</button>`}</article>`;
   if (reviewRevealed) attachWordSpeaker(word.id);
 }
 function renderBox() {
@@ -321,7 +340,7 @@ document.addEventListener("click", event => {
     showToast(`已设置为每次学习${size}个词`);
     return renderGrowth();
   }
-  if (action === "record-word") return recordWord(Number(target.dataset.id));
+  if (action === "record-word") return followWord(Number(target.dataset.id));
   if (action === "remember-word") { const word = lessonWords[learnPosition]; if (!state.voiceAttempts.includes(word.id)) return; state.learned = core.addUnique(state.learned, word.id); state = core.scheduleReview(state, word.id); saveState(); learnPosition += 1; return renderLearn(); }
   if (action === "start-review") return startReview();
   if (action === "reveal-review") { reviewRevealed = true; return renderReview(); }
@@ -329,7 +348,7 @@ document.addEventListener("click", event => {
   if (action === "start-quiz") return startQuiz();
   if (action === "select-option") { selectedAnswer = quiz[quizIndex].options[Number(target.dataset.index)]; return renderQuiz(); }
   if (action === "submit-answer") { const value = quiz[quizIndex].type === "spelling" ? spellingAnswer.trim().toLowerCase() : selectedAnswer; if (!value) return showToast("请先作答"); return commitAnswer(value); }
-  if (action === "record-quiz") return recordWord(Number(target.dataset.id), () => commitAnswer("participated"));
+  if (action === "record-quiz") return followWord(Number(target.dataset.id), () => commitAnswer("participated"));
   if (action === "result-next") return quizAnswers.filter(answer => answer.correct).length >= 4 ? navigate("box") : startQuiz();
   if (action === "open-box") return openBlindBox();
   if (action === "go-collection") return navigate("collection");
