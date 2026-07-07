@@ -44,7 +44,7 @@
     ];
   }
   function defaultState() {
-    return { learned: [], voiceAttempts: [], keys: 0, starDust: 0, collection: [], lessonSize: 5, currentLesson: 0, activeLesson: 0, completedLessons: [], rewardedLessons: [], bestScores: {}, reviews: {} };
+    return { learned: [], voiceAttempts: [], sentenceVoiceAttempts: [], keys: 0, starDust: 0, collection: [], lessonSize: 5, currentLesson: 0, activeLesson: 0, completedLessons: [], rewardedLessons: [], bestScores: {}, reviews: {} };
   }
   function normalizeState(value) {
     const state = Object.assign(defaultState(), value || {});

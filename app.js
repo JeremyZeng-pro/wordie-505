@@ -164,7 +164,7 @@ function renderScene(word, includeExample = false, includeRemember = false, reme
   const headline = includeExample ? word.example : word.art.sceneCaption;
   const subline = includeExample ? word.exampleCn : word.art.bubble;
   const caption = includeExample ? `<div class="scene-caption"><div class="scene-example-row"><strong>${headline}</strong><button class="caption-speaker" data-action="play-sentence" data-id="${word.id}" aria-label="播放例句">🔊</button><button class="caption-follow" data-action="record-sentence" data-id="${word.id}">🎙️ 跟读</button></div><span>${subline}</span></div>` : `<div class="scene-caption"><strong>${headline}</strong><span>${subline}</span></div>`;
-  const remember = includeRemember ? `<button class="scene-remember" data-action="remember-word" ${rememberEnabled ? "" : "disabled"}>${rememberEnabled ? "我记住了" : "完成单词跟读后解锁"}</button>` : "";
+  const remember = includeRemember ? `<button class="scene-remember" data-action="remember-word" ${rememberEnabled ? "" : "disabled"}>${rememberEnabled ? "我记住了" : "完成单词和例句跟读后解锁"}</button>` : "";
   const rememberClass = includeRemember ? " scene-with-remember" : "";
   if (word.image) return `<div class="scene scene-image${rememberClass}"><img class="word-scene-image" src="${word.image}" alt="${word.word}词义情境图" loading="eager">${caption}${remember}</div>`;
   return `<div class="scene scene-${word.art.style}${rememberClass}"><span class="scene-sticker">${word.art.sticker}</span><span class="scene-note">${word.art.note}</span><div class="scene-stage scene-stage-${word.art.visualType}"><span class="scene-role">${word.art.leftEmoji}</span><b class="scene-arrow">${word.art.arrow}</b><span class="scene-role scene-role-main">${word.art.rightEmoji}</span></div>${caption}${remember}</div>`;
@@ -177,10 +177,11 @@ function renderLearn() {
   }
   const word = lessonWords[learnPosition];
   const voiceDone = state.voiceAttempts.includes(word.id);
+  const sentenceDone = (state.sentenceVoiceAttempts || []).includes(word.id);
   const recordingUrl = recordingUrls[word.id];
   const sentenceRecording = recordingWordId === `sentence-${word.id}` && mediaRecorder?.state === "recording";
   const sentenceRecordingUrl = recordingUrls[`sentence-${word.id}`];
-  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 新词 ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "现在读…" : "🎙️ 跟读单词"}</button></div><div class="word-meta"><span class="phonetic">音标 ${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">常见中文意思：${word.meaning}</div>${renderScene(word, true, true, voiceDone)}<div class="tip">💡 ${word.tip}</div></article><div class="record-panel">${recordingUrl ? `<div class="record-status">单词跟读录音（未上传）</div><audio controls src="${recordingUrl}"></audio>` : ""}${sentenceRecordingUrl ? `<div class="record-status recording-gap">例句跟读录音（未上传）</div><audio controls src="${sentenceRecordingUrl}"></audio>` : ""}${!recordingUrl && !sentenceRecordingUrl ? `<div class="record-status">首次跟读时，浏览器会请求麦克风权限。</div>` : ""}</div>`;
+  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 新词 ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "现在读…" : "🎙️ 跟读单词"}</button></div><div class="word-meta"><span class="phonetic">音标 ${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">常见中文意思：${word.meaning}</div>${renderScene(word, true, true, voiceDone && sentenceDone)}<div class="tip">💡 ${word.tip}</div></article><div class="record-panel">${recordingUrl ? `<div class="record-status">单词跟读录音（未上传）</div><audio controls src="${recordingUrl}"></audio>` : ""}${sentenceRecordingUrl ? `<div class="record-status recording-gap">例句跟读录音（未上传）</div><audio controls src="${sentenceRecordingUrl}"></audio>` : ""}${!recordingUrl && !sentenceRecordingUrl ? `<div class="record-status">首次跟读时，浏览器会请求麦克风权限。</div>` : ""}</div>`;
   attachWordSpeaker(word.id);
   autoPlayWord(word.id, "learn");
 }
@@ -206,6 +207,7 @@ async function recordWord(wordId, callback, duration = 2600, preparedStream = nu
       if (recordingUrls[wordId]) URL.revokeObjectURL(recordingUrls[wordId]);
       recordingUrls[wordId] = URL.createObjectURL(blob);
       if (typeof wordId === "number") state.voiceAttempts = core.addUnique(state.voiceAttempts, wordId);
+      else if (String(wordId).startsWith("sentence-")) state.sentenceVoiceAttempts = core.addUnique(state.sentenceVoiceAttempts || [], Number(String(wordId).replace("sentence-", "")));
       saveState();
       if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
       mediaStream = null;
@@ -368,7 +370,7 @@ document.addEventListener("click", event => {
     return renderGrowth();
   }
   if (action === "record-word") return followWord(Number(target.dataset.id));
-  if (action === "remember-word") { const word = lessonWords[learnPosition]; if (!state.voiceAttempts.includes(word.id)) return; state.learned = core.addUnique(state.learned, word.id); state = core.scheduleReview(state, word.id); saveState(); learnPosition += 1; return renderLearn(); }
+  if (action === "remember-word") { const word = lessonWords[learnPosition]; if (!state.voiceAttempts.includes(word.id) || !(state.sentenceVoiceAttempts || []).includes(word.id)) return; state.learned = core.addUnique(state.learned, word.id); state = core.scheduleReview(state, word.id); saveState(); learnPosition += 1; return renderLearn(); }
   if (action === "start-review") return startReview();
   if (action === "reveal-review") { reviewRevealed = true; return renderReview(); }
   if (action === "grade-review") { const word = reviewQueue[reviewIndex]; state = core.gradeReview(state, word.id, target.dataset.result === "good"); saveState(); reviewIndex += 1; reviewRevealed = false; return renderReview(); }
