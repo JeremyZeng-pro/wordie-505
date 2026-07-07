@@ -160,12 +160,14 @@ function startLesson(index) {
   lastAutoWordKey = "";
   navigate("learn", { lesson: index });
 }
-function renderScene(word, includeExample = false) {
+function renderScene(word, includeExample = false, includeRemember = false, rememberEnabled = false) {
   const headline = includeExample ? word.example : word.art.sceneCaption;
   const subline = includeExample ? word.exampleCn : word.art.bubble;
   const caption = includeExample ? `<div class="scene-caption"><div class="scene-example-row"><strong>${headline}</strong><button class="caption-speaker" data-action="play-sentence" data-id="${word.id}" aria-label="播放例句">🔊</button><button class="caption-follow" data-action="record-sentence" data-id="${word.id}">🎙️ 跟读</button></div><span>${subline}</span></div>` : `<div class="scene-caption"><strong>${headline}</strong><span>${subline}</span></div>`;
-  if (word.image) return `<div class="scene scene-image"><img class="word-scene-image" src="${word.image}" alt="${word.word}词义情境图" loading="eager">${caption}</div>`;
-  return `<div class="scene scene-${word.art.style}"><span class="scene-sticker">${word.art.sticker}</span><span class="scene-note">${word.art.note}</span><div class="scene-stage scene-stage-${word.art.visualType}"><span class="scene-role">${word.art.leftEmoji}</span><b class="scene-arrow">${word.art.arrow}</b><span class="scene-role scene-role-main">${word.art.rightEmoji}</span></div>${caption}</div>`;
+  const remember = includeRemember ? `<button class="scene-remember" data-action="remember-word" ${rememberEnabled ? "" : "disabled"}>${rememberEnabled ? "我记住了" : "完成单词跟读后解锁"}</button>` : "";
+  const rememberClass = includeRemember ? " scene-with-remember" : "";
+  if (word.image) return `<div class="scene scene-image${rememberClass}"><img class="word-scene-image" src="${word.image}" alt="${word.word}词义情境图" loading="eager">${caption}${remember}</div>`;
+  return `<div class="scene scene-${word.art.style}${rememberClass}"><span class="scene-sticker">${word.art.sticker}</span><span class="scene-note">${word.art.note}</span><div class="scene-stage scene-stage-${word.art.visualType}"><span class="scene-role">${word.art.leftEmoji}</span><b class="scene-arrow">${word.art.arrow}</b><span class="scene-role scene-role-main">${word.art.rightEmoji}</span></div>${caption}${remember}</div>`;
 }
 function renderLearn() {
   if (!lessonWords.length) { lessonIndex = state.activeLesson; lessonWords = core.getLesson(catalog, lessonIndex, lessonSize()); }
@@ -177,19 +179,23 @@ function renderLearn() {
   const voiceDone = state.voiceAttempts.includes(word.id);
   const recordingUrl = recordingUrls[word.id];
   const sentenceRecording = recordingWordId === `sentence-${word.id}` && mediaRecorder?.state === "recording";
-  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 新词 ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "现在读…" : "🎙️ 跟读单词"}</button></div><div class="word-meta"><span class="phonetic">音标 ${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">常见中文意思：${word.meaning}</div>${renderScene(word, true)}<div class="tip">💡 ${word.tip}</div></article><div class="button-row learn-actions"><button class="primary wide" data-action="remember-word" ${voiceDone ? "" : "disabled"}>我记住了</button></div>${recordingUrl ? `<div class="record-panel"><div class="record-status">你的离线录音（未上传）</div><audio controls src="${recordingUrl}"></audio></div>` : `<div class="record-panel"><div class="record-status">首次跟读时，浏览器会请求麦克风权限。</div></div>`}`;
+  const sentenceRecordingUrl = recordingUrls[`sentence-${word.id}`];
+  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 新词 ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "现在读…" : "🎙️ 跟读单词"}</button></div><div class="word-meta"><span class="phonetic">音标 ${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">常见中文意思：${word.meaning}</div>${renderScene(word, true, true, voiceDone)}<div class="tip">💡 ${word.tip}</div></article><div class="record-panel">${recordingUrl ? `<div class="record-status">单词跟读录音（未上传）</div><audio controls src="${recordingUrl}"></audio>` : ""}${sentenceRecordingUrl ? `<div class="record-status recording-gap">例句跟读录音（未上传）</div><audio controls src="${sentenceRecordingUrl}"></audio>` : ""}${!recordingUrl && !sentenceRecordingUrl ? `<div class="record-status">首次跟读时，浏览器会请求麦克风权限。</div>` : ""}</div>`;
   attachWordSpeaker(word.id);
   autoPlayWord(word.id, "learn");
 }
 
-async function recordWord(wordId, callback, duration = 2600) {
+async function recordWord(wordId, callback, duration = 2600, preparedStream = null) {
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
     showToast("当前打开方式不支持录音，请使用一键启动版");
     return;
   }
   try {
-    stopActiveRecording();
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+    if (preparedStream) mediaStream = preparedStream;
+    else {
+      stopActiveRecording();
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+    }
     recordingChunks = [];
     recordingWordId = wordId;
     recordingCallback = callback || null;
@@ -210,26 +216,46 @@ async function recordWord(wordId, callback, duration = 2600) {
       if (done) done(); else if (routeState.name === "word") renderWord(); else renderLearn();
     };
     mediaRecorder.start();
-    if (routeState.name === "learn") renderLearn(); else renderQuiz();
+    if (routeState.name === "learn") renderLearn(); else if (routeState.name === "word") renderWord(); else renderQuiz();
     recordingTimer = setTimeout(() => { if (mediaRecorder?.state === "recording") mediaRecorder.stop(); }, duration);
   } catch (error) {
     recordingWordId = null;
     showToast(error.name === "NotAllowedError" ? "请在浏览器设置中允许麦克风" : "无法启动录音，请检查麦克风");
   }
 }
+async function prepareMicrophone() {
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    showToast("当前打开方式不支持录音，请使用一键启动版");
+    return null;
+  }
+  try {
+    stopActiveRecording();
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+    return mediaStream;
+  } catch (error) {
+    showToast(error.name === "NotAllowedError" ? "请在浏览器设置中允许麦克风" : "无法启动录音，请检查麦克风");
+    return null;
+  }
+}
 async function followWord(wordId, callback) {
+  const preparedStream = await prepareMicrophone();
+  if (!preparedStream) return;
   showToast("请先听标准单词发音");
   if (await playWord(wordId)) {
     showToast("现在请读单词");
-    return recordWord(wordId, callback);
+    return recordWord(wordId, callback, 2600, preparedStream);
   }
+  preparedStream.getTracks().forEach(track => track.stop());
 }
 async function recordSentence(wordId) {
+  const preparedStream = await prepareMicrophone();
+  if (!preparedStream) return;
   showToast("请先听标准例句");
   if (await playSentence(wordId)) {
     showToast("现在请读完整例句");
-    return recordWord(`sentence-${wordId}`, null, 6500);
+    return recordWord(`sentence-${wordId}`, null, 6500, preparedStream);
   }
+  preparedStream.getTracks().forEach(track => track.stop());
 }
 
 function startQuiz() {
