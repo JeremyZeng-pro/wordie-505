@@ -14,6 +14,7 @@ let lessonIndex = 0;
 let lessonWords = [];
 let learnPosition = 0;
 let lessonReviewMode = false;
+let learningPosition = 0;
 let quiz = [];
 let quizIndex = 0;
 let quizAnswers = [];
@@ -29,6 +30,8 @@ const recordingUrls = {};
 let reviewQueue = [];
 let reviewIndex = 0;
 let reviewRevealed = false;
+let reviewWakeTimer = null;
+let dueBadgeTimer = null;
 let lastAutoWordKey = "";
 
 function loadState() {
@@ -141,6 +144,9 @@ function renderHome() {
     <button class="section panel wide course-entry" data-route="course"><span><b>查看全部505词课程</b><small class="muted" style="display:block;margin-top:5px">总进度 ${progressPercent()}% · 可搜索任意单词</small></span><span class="arrow">›</span></button>
     <button class="section review-entry wide" data-action="start-review"><span><b>🧠 今日待复习 ${dueCount} 词</b><small>${dueCount ? "按遗忘曲线及时巩固" : "今天的复习已完成"}</small></span><span>›</span></button>
     <section class="section"><h2>任务路线</h2><div class="mission"><span class="icon">📚</span><div><b>1. 学习${words.length}个新词</b><p>大图联想、离线发音、例句和记忆梗</p></div></div><div class="mission"><span class="icon">🎙️</span><div><b>2. 离线录音跟读</b><p>录音只留在本地，可立即回放</p></div></div><div class="mission"><span class="icon">🎁</span><div><b>3. 检测达标开盲盒</b><p>达到80分后获得学习钥匙</p></div></div></section>`;
+  clearTimeout(dueBadgeTimer);
+  const nextDue = Object.values(state.reviews || {}).map(item => Number(item.dueAt || 0)).filter(time => time > Date.now()).sort((a, b) => a - b)[0];
+  if (nextDue && nextDue - Date.now() <= 11 * 60000) dueBadgeTimer = setTimeout(() => { if (routeState.name === "home") renderHome(); }, nextDue - Date.now() + 500);
 }
 
 function lessonRows() {
@@ -171,6 +177,7 @@ function startLesson(index) {
   const first = lessonWords.findIndex(word => !state.learned.includes(word.id));
   lessonReviewMode = first < 0;
   learnPosition = first < 0 ? 0 : first;
+  learningPosition = first < 0 ? lessonWords.length : first;
   lastAutoWordKey = "";
   navigate("learn", { lesson: index });
 }
@@ -199,12 +206,14 @@ function renderLearn() {
     }
   }
   const word = lessonWords[learnPosition];
+  const learnedPositions = lessonWords.map((item, index) => state.learned.includes(item.id) ? index : -1).filter(index => index >= 0);
+  const reviewCursor = learnedPositions.indexOf(learnPosition);
   const voiceDone = state.voiceAttempts.includes(word.id);
   const sentenceDone = (state.sentenceVoiceAttempts || []).includes(word.id);
   const recordingUrl = recordingUrls[word.id];
   const sentenceRecording = recordingWordId === `sentence-${word.id}` && mediaRecorder?.state === "recording";
   const sentenceRecordingUrl = recordingUrls[`sentence-${word.id}`];
-  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · ${lessonReviewMode ? "翻阅单词卡" : "新词"} ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "现在读…" : "🎙️ 跟读单词"}</button></div><div class="word-meta"><span class="phonetic">${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">${word.meaning}</div>${renderScene(word, true, !lessonReviewMode, voiceDone && sentenceDone)}<div class="tip">💡 ${word.tip}</div></article>${lessonReviewMode ? `<div class="card-nav"><button data-action="previous-card" ${learnPosition === 0 ? "disabled" : ""}>← 上一张</button><button data-action="next-card" ${learnPosition === lessonWords.length - 1 ? "disabled" : ""}>下一张 →</button></div>` : ""}<div class="record-panel">${recordingUrl ? `<div class="record-status">单词跟读录音（未上传）</div><audio controls src="${recordingUrl}"></audio>` : ""}${sentenceRecordingUrl ? `<div class="record-status recording-gap">例句跟读录音（未上传）</div><audio controls src="${sentenceRecordingUrl}"></audio>` : ""}${!recordingUrl && !sentenceRecordingUrl ? `<div class="record-status">首次跟读时，浏览器会请求麦克风权限。</div>` : ""}</div>`;
+  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · ${lessonReviewMode ? "翻阅已学单词" : "新词"} ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "现在读…" : "🎙️ 跟读单词"}</button></div><div class="word-meta"><span class="phonetic">${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">${word.meaning}</div>${renderScene(word, true, !lessonReviewMode, voiceDone && sentenceDone)}<div class="tip">💡 ${word.tip}</div></article>${!lessonReviewMode && learnedPositions.length ? `<button class="review-learned wide" data-action="review-lesson">📚 翻阅已学单词（${learnedPositions.length}）</button>` : ""}${lessonReviewMode ? `<div class="card-nav"><button data-action="previous-card" ${reviewCursor <= 0 ? "disabled" : ""}>← 上一张</button><button data-action="next-card" ${reviewCursor < 0 || reviewCursor >= learnedPositions.length - 1 ? "disabled" : ""}>下一张 →</button></div><button class="continue-learning wide" data-action="continue-learning">继续学习新词</button>` : ""}<div class="record-panel">${recordingUrl ? `<div class="record-status">单词跟读录音（未上传）</div><audio controls src="${recordingUrl}"></audio>` : ""}${sentenceRecordingUrl ? `<div class="record-status recording-gap">例句跟读录音（未上传）</div><audio controls src="${sentenceRecordingUrl}"></audio>` : ""}${!recordingUrl && !sentenceRecordingUrl ? `<div class="record-status">首次跟读时，浏览器会请求麦克风权限。</div>` : ""}</div>`;
   attachWordSpeaker(word.id);
   autoPlayWord(word.id, "learn");
 }
@@ -325,14 +334,32 @@ function startReview() {
   if (!reviewQueue.length) return showToast("今天的复习已经完成");
   navigate("review");
 }
+function scheduleReviewRefresh() {
+  clearTimeout(reviewWakeTimer);
+  const future = Object.values(state.reviews || {}).map(item => Number(item.dueAt || 0)).filter(time => time > Date.now()).sort((a, b) => a - b);
+  if (!future.length) return "今天没有更多待复习单词";
+  const next = future[0];
+  const delay = next - Date.now();
+  if (delay <= 11 * 60000) reviewWakeTimer = setTimeout(() => {
+    if (routeState.name !== "review") return;
+    reviewQueue = core.dueReviewIds(state).map(id => catalog.find(word => word.id === id)).filter(Boolean).slice(0, 20);
+    reviewIndex = 0;
+    reviewRevealed = false;
+    renderReview();
+  }, delay + 500);
+  return `下一次：${reviewDelayText({ dueAt: next })}`;
+}
 function renderReview() {
   if (reviewIndex >= reviewQueue.length) {
-    app.innerHTML = `<div class="panel result-card"><div style="font-size:68px">🧠</div><h1>今日复习完成</h1><p class="muted">记忆会在一次次主动回想中变牢。</p><button class="primary wide" data-route="home">返回首页</button></div>`;
+    const nextText = scheduleReviewRefresh();
+    app.innerHTML = `<div class="panel result-card"><div style="font-size:68px">🧠</div><h1>本轮复习完成</h1><p class="muted">${nextText}</p><p class="muted">选择“还不熟”的单词会在10分钟到时自动再次出现。</p><button class="primary wide" data-route="home">返回首页</button></div>`;
     return;
   }
   const word = reviewQueue[reviewIndex];
   const review = state.reviews[word.id] || { stage: 0 };
-  app.innerHTML = `<div class="eyebrow">间隔复习 ${reviewIndex + 1}/${reviewQueue.length} · 第${review.stage + 1}轮</div><article class="review-card"><span class="tag">先回想，再揭晓</span><h2>${word.meaning}</h2><p class="muted">请说出英文单词，并尝试读出例句。</p>${reviewRevealed ? `<h1 class="word-title">${word.word}</h1><div class="phonetic">${word.phonetic}</div>${renderScene(word, true)}<div class="review-actions"><button class="review-hard" data-action="grade-review" data-result="hard">还不熟 · 10分钟后再来</button><button class="review-good" data-action="grade-review" data-result="good">记住了 · 按计划延后</button></div>` : `<button class="primary wide reveal-answer" data-action="reveal-review">查看答案</button>`}</article>`;
+  const nextStage = Math.min(review.stage + 1, core.REVIEW_DAYS.length - 1);
+  const nextDays = core.REVIEW_DAYS[nextStage];
+  app.innerHTML = `<div class="eyebrow">间隔复习 ${reviewIndex + 1}/${reviewQueue.length} · 第${review.stage + 1}轮</div><article class="review-card"><span class="tag">先回想，再揭晓</span><h2>${word.meaning}</h2><p class="muted">请说出英文单词，并尝试读出例句。</p>${reviewRevealed ? `<h1 class="word-title">${word.word}</h1><div class="phonetic">${word.phonetic}</div>${renderScene(word, true)}<p class="review-plan">本次记住后：${nextDays === 1 ? "明天" : `${nextDays}天后`}再次复习</p><div class="review-actions"><button class="review-hard" data-action="grade-review" data-result="hard">还不熟 · 10分钟后再来</button><button class="review-good" data-action="grade-review" data-result="good">记住了 · 按计划延后</button></div>` : `<button class="primary wide reveal-answer" data-action="reveal-review">查看答案</button>`}</article>`;
   if (reviewRevealed) attachWordSpeaker(word.id);
 }
 function renderBox() {
@@ -394,10 +421,11 @@ document.addEventListener("click", event => {
     return renderGrowth();
   }
   if (action === "record-word") return followWord(Number(target.dataset.id));
-  if (action === "remember-word") { const word = lessonWords[learnPosition]; if (!state.voiceAttempts.includes(word.id) || !(state.sentenceVoiceAttempts || []).includes(word.id)) return; state.learned = core.addUnique(state.learned, word.id); state = core.scheduleReview(state, word.id); saveState(); playCompletionSound(); showToast("✨ 星词收集成功！"); learnPosition += 1; return renderLearn(); }
-  if (action === "review-lesson") { lessonReviewMode = true; learnPosition = 0; return renderLearn(); }
-  if (action === "previous-card") { if (learnPosition > 0) learnPosition -= 1; return renderLearn(); }
-  if (action === "next-card") { if (learnPosition < lessonWords.length - 1) learnPosition += 1; return renderLearn(); }
+  if (action === "remember-word") { const word = lessonWords[learnPosition]; if (!state.voiceAttempts.includes(word.id) || !(state.sentenceVoiceAttempts || []).includes(word.id)) return; state.learned = core.addUnique(state.learned, word.id); state = core.scheduleReview(state, word.id); saveState(); playCompletionSound(); showToast("✨ 星词收集成功！"); learnPosition += 1; learningPosition = learnPosition; return renderLearn(); }
+  if (action === "review-lesson") { const learned = lessonWords.map((word, index) => state.learned.includes(word.id) ? index : -1).filter(index => index >= 0); if (!learned.length) return showToast("先学会一个单词再翻阅"); lessonReviewMode = true; learnPosition = learned[0]; return renderLearn(); }
+  if (action === "previous-card") { const learned = lessonWords.map((word, index) => state.learned.includes(word.id) ? index : -1).filter(index => index >= 0); const cursor = learned.indexOf(learnPosition); if (cursor > 0) learnPosition = learned[cursor - 1]; return renderLearn(); }
+  if (action === "next-card") { const learned = lessonWords.map((word, index) => state.learned.includes(word.id) ? index : -1).filter(index => index >= 0); const cursor = learned.indexOf(learnPosition); if (cursor >= 0 && cursor < learned.length - 1) learnPosition = learned[cursor + 1]; return renderLearn(); }
+  if (action === "continue-learning") { lessonReviewMode = false; learnPosition = learningPosition; return renderLearn(); }
   if (action === "start-review") return startReview();
   if (action === "reveal-review") { reviewRevealed = true; return renderReview(); }
   if (action === "grade-review") { const word = reviewQueue[reviewIndex]; const remembered = target.dataset.result === "good"; state = core.gradeReview(state, word.id, remembered); saveState(); showToast(`已安排：${reviewDelayText(state.reviews[word.id])}`); reviewIndex += 1; reviewRevealed = false; return renderReview(); }
@@ -421,7 +449,8 @@ document.addEventListener("input", event => {
 });
 window.addEventListener("online", () => { document.querySelector("#offline-badge").textContent = "已联网"; });
 window.addEventListener("offline", () => { document.querySelector("#offline-badge").textContent = "离线可用"; });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && routeState.name === "review" && reviewIndex >= reviewQueue.length) { const due = core.dueReviewIds(state); if (due.length) { reviewQueue = due.map(id => catalog.find(word => word.id === id)).filter(Boolean).slice(0, 20); reviewIndex = 0; reviewRevealed = false; renderReview(); } } });
 window.addEventListener("beforeunload", stopActiveRecording);
-if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=23", { updateViaCache: "none" }).catch(() => {});
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=24", { updateViaCache: "none" }).catch(() => {});
 saveState();
 navigate("home");
