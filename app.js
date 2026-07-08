@@ -396,13 +396,14 @@ function openBlindBox() {
 }
 function renderCollection() {
   const eligible = graduationEligible();
-  app.innerHTML = `<div class="eyebrow">10 SERIES · 60 TOYS</div><h1 class="page-title">我的潮玩收藏</h1><p class="muted">已收集 ${state.collection.length}/${characters.length}。</p><section class="ultimate-section section"><div class="ultimate-copy"><span class="tag">ULTIMATE REWARD</span><h2>词萌星球终极守护者</h2><p>${eligible ? "505词与全部课程已经完成，请选择你的专属守护者。" : `完成505词和全部课程检测后解锁。当前 ${state.learned.length}/505 词。`}</p><div class="ultimate-actions"><button class="primary" data-action="open-graduation">${eligible ? "领取终极奖励" : "预览终极奖励"}</button><button class="ghost" data-action="preview-certificate">预览双语证书</button></div></div><div class="guardian-preview"><img src="assets/images/ultimate-guardian.jpg" alt="星钥守护者"><img src="assets/images/ultimate-guardian-b.jpg" alt="星语守护者"></div></section><div class="toy-grid section">${characters.map(character => { const owned = state.collection.includes(character.id); return `<article class="toy-card ${owned ? "" : "locked"}"><b style="font-size:10px;color:var(--purple-dark)">${character.rarity} · ${character.series}</b><div class="toy">${owned ? character.toy : "❔"}</div><strong>${owned ? character.name : "尚未解锁"}</strong><small>${owned ? character.line : "继续学习会遇见它"}</small></article>`; }).join("")}</div>`;
+  app.innerHTML = `<div class="eyebrow">10 SERIES · 60 TOYS</div><h1 class="page-title">我的潮玩收藏</h1><p class="muted">已收集 ${state.collection.length}/${characters.length}。</p><section class="ultimate-section section"><div class="ultimate-copy"><span class="tag">ULTIMATE REWARD</span><h2>词萌星球终极守护者</h2><p>${eligible ? "505词与全部课程已经完成，请选择你的专属守护者。" : `完成505词和全部课程检测后解锁。当前 ${state.learned.length}/505 词。`}</p><div class="ultimate-actions"><button class="primary" data-action="open-graduation" ${eligible ? "" : "disabled"}>${eligible ? "领取终极奖励" : "完成全部学习后解锁"}</button><button class="ghost" data-action="preview-certificate" ${eligible ? "" : "disabled"}>${eligible ? "查看双语证书" : "证书尚未解锁"}</button></div></div>${eligible ? `<div class="guardian-preview"><img src="assets/images/ultimate-guardian.jpg" alt="星钥守护者"><img src="assets/images/ultimate-guardian-b.jpg" alt="星语守护者"></div>` : `<div class="guardian-preview-locked"><span>🔒</span><b>终极角色与双语证书尚未解锁</b></div>`}</section><div class="toy-grid section">${characters.map(character => { const owned = state.collection.includes(character.id); return `<article class="toy-card ${owned ? "" : "locked"}"><b style="font-size:10px;color:var(--purple-dark)">${character.rarity} · ${character.series}</b><div class="toy">${owned ? character.toy : "❔"}</div><strong>${owned ? character.name : "尚未解锁"}</strong><small>${owned ? character.line : "继续学习会遇见它"}</small></article>`; }).join("")}</div>`;
 }
 function graduationEligible() {
   return state.learned.length >= catalog.length && state.completedLessons.length >= core.lessonCount(catalog, lessonSize());
 }
 function renderGraduation() {
-  const preview = routeState.preview || !graduationEligible();
+  if (!graduationEligible()) { showToast("完成505词和全部课程检测后解锁"); routeState = { name: "collection" }; setActiveNav("collection"); return renderCollection(); }
+  const preview = false;
   const choice = state.guardianChoice || "a";
   const name = state.graduateName || "词萌星球学习者";
   const guardianImage = choice === "b" ? "assets/images/ultimate-guardian-b.jpg" : "assets/images/ultimate-guardian.jpg";
@@ -453,8 +454,8 @@ document.addEventListener("click", event => {
   if (action === "result-next") return quizAnswers.filter(answer => answer.correct).length >= 4 ? navigate("box") : startQuiz();
   if (action === "open-box") return openBlindBox();
   if (action === "go-collection") return navigate("collection");
-  if (action === "open-graduation") return navigate("graduation", { preview: !graduationEligible() });
-  if (action === "preview-certificate") return navigate("graduation", { preview: true });
+  if (action === "open-graduation") return graduationEligible() ? navigate("graduation", { preview: false }) : showToast("完成505词和全部课程检测后解锁");
+  if (action === "preview-certificate") return graduationEligible() ? navigate("graduation", { preview: false }) : showToast("完成全部学习后才能查看证书");
   if (action === "choose-guardian") { state.guardianChoice = target.dataset.choice; saveState(); return renderGraduation(); }
   if (action === "print-certificate") return graduationEligible() && !routeState.preview ? window.print() : showToast("完成全部任务后可打印正式证书");
   if (action === "reset-state") { if (confirm("确定清空505词学习记录、钥匙和收藏吗？")) { state = core.defaultState(); saveState(); navigate("growth"); } }
@@ -468,6 +469,6 @@ window.addEventListener("online", () => { document.querySelector("#offline-badge
 window.addEventListener("offline", () => { document.querySelector("#offline-badge").textContent = "离线可用"; });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && routeState.name === "review" && reviewIndex >= reviewQueue.length) { const due = core.dueReviewIds(state); if (due.length) { reviewQueue = due.map(id => catalog.find(word => word.id === id)).filter(Boolean).slice(0, 20); reviewIndex = 0; reviewRevealed = false; renderReview(); } } });
 window.addEventListener("beforeunload", stopActiveRecording);
-if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=29", { updateViaCache: "none" }).catch(() => {});
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=30", { updateViaCache: "none" }).catch(() => {});
 saveState();
 navigate("home");
