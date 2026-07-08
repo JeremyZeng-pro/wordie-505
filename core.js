@@ -38,7 +38,7 @@
     return [
       { type: "choice", label: "看词选义", wordId: a.id, word: a.word, prompt: `${a.word} 是什么意思？`, options: uniqueOptions(a.meaning, [b.meaning, c.meaning, d.meaning]), answer: a.meaning },
       { type: "audio", label: "听音选词", wordId: b.id, word: b.word, prompt: "听发音，选择你听到的单词。", options: uniqueOptions(b.word, [a.word, c.word, e.word]), answer: b.word },
-      { type: "spelling", label: "字母拼写", wordId: c.id, word: c.word, prompt: `请拼写“${c.meaning}”。`, answer: c.word.toLowerCase() },
+      { type: "contextMeaning", label: "例句辨义", wordId: c.id, word: c.word, prompt: "根据例句，选择红色单词的中文意思。", example: c.example, options: uniqueOptions(c.meaning, [a.meaning, b.meaning, d.meaning, e.meaning]), answer: c.meaning },
       { type: "choice", label: "情境选词", wordId: d.id, word: d.word, prompt: context, options: uniqueOptions(d.word, [b.word, e.word, a.word]), answer: d.word },
       { type: "voice", label: "语音跟读", wordId: e.id, word: e.word, prompt: `听一遍，然后跟读 ${e.word}。`, answer: "participated" }
     ];

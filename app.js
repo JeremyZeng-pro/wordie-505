@@ -13,6 +13,7 @@ let courseQuery = "";
 let lessonIndex = 0;
 let lessonWords = [];
 let learnPosition = 0;
+let lessonReviewMode = false;
 let quiz = [];
 let quizIndex = 0;
 let quizAnswers = [];
@@ -104,6 +105,18 @@ function playSentence(id) {
     player.play().catch(() => { showToast("无法播放例句，请使用一键启动版打开"); resolve(false); });
   });
 }
+function playCompletionSound() {
+  const player = new Audio("assets/sfx/star-complete.wav");
+  player.volume = 0.72;
+  player.play().catch(() => {});
+}
+function reviewDelayText(review) {
+  if (!review) return "稍后复习";
+  const minutes = Math.max(1, Math.round((review.dueAt - Date.now()) / 60000));
+  if (minutes < 60) return `${minutes}分钟后再复习`;
+  const days = Math.max(1, Math.round(minutes / 1440));
+  return days === 1 ? "明天再复习" : `${days}天后再复习`;
+}
 function renderExample(word) {
   const key = `sentence-${word.id}`;
   const recording = recordingUrls[key];
@@ -156,6 +169,7 @@ function startLesson(index) {
   lessonIndex = index;
   lessonWords = core.getLesson(catalog, index, lessonSize());
   const first = lessonWords.findIndex(word => !state.learned.includes(word.id));
+  lessonReviewMode = first < 0;
   learnPosition = first < 0 ? 0 : first;
   lastAutoWordKey = "";
   navigate("learn", { lesson: index });
@@ -178,8 +192,11 @@ function renderScene(word, includeExample = false, includeRemember = false, reme
 function renderLearn() {
   if (!lessonWords.length) { lessonIndex = state.activeLesson; lessonWords = core.getLesson(catalog, lessonIndex, lessonSize()); }
   if (learnPosition >= lessonWords.length) {
-    app.innerHTML = `<div class="panel result-card"><div style="font-size:68px">🎯</div><h1>${lessonWords.length}个词已学习</h1><p class="muted">接下来完成五种检测。达到80分即可获得钥匙。</p><button class="primary wide" data-action="start-quiz">开始综合检测</button></div>`;
+    if (lessonReviewMode) learnPosition = lessonWords.length - 1;
+    else {
+    app.innerHTML = `<div class="panel result-card"><div style="font-size:68px">🎯</div><h1>${lessonWords.length}个词已学习</h1><p class="muted">接下来完成五种检测。达到80分即可获得钥匙。</p><button class="primary wide" data-action="start-quiz">开始综合检测</button><button class="secondary wide review-lesson-button" data-action="review-lesson">翻阅本课单词卡</button></div>`;
     return;
+    }
   }
   const word = lessonWords[learnPosition];
   const voiceDone = state.voiceAttempts.includes(word.id);
@@ -187,7 +204,7 @@ function renderLearn() {
   const recordingUrl = recordingUrls[word.id];
   const sentenceRecording = recordingWordId === `sentence-${word.id}` && mediaRecorder?.state === "recording";
   const sentenceRecordingUrl = recordingUrls[`sentence-${word.id}`];
-  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 新词 ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "现在读…" : "🎙️ 跟读单词"}</button></div><div class="word-meta"><span class="phonetic">音标 ${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">常见中文意思：${word.meaning}</div>${renderScene(word, true, true, voiceDone && sentenceDone)}<div class="tip">💡 ${word.tip}</div></article><div class="record-panel">${recordingUrl ? `<div class="record-status">单词跟读录音（未上传）</div><audio controls src="${recordingUrl}"></audio>` : ""}${sentenceRecordingUrl ? `<div class="record-status recording-gap">例句跟读录音（未上传）</div><audio controls src="${sentenceRecordingUrl}"></audio>` : ""}${!recordingUrl && !sentenceRecordingUrl ? `<div class="record-status">首次跟读时，浏览器会请求麦克风权限。</div>` : ""}</div>`;
+  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · ${lessonReviewMode ? "翻阅单词卡" : "新词"} ${learnPosition + 1}/${lessonWords.length}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">${recordingWordId === word.id && mediaRecorder?.state === "recording" ? "现在读…" : "🎙️ 跟读单词"}</button></div><div class="word-meta"><span class="phonetic">${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">${word.meaning}</div>${renderScene(word, true, !lessonReviewMode, voiceDone && sentenceDone)}<div class="tip">💡 ${word.tip}</div></article>${lessonReviewMode ? `<div class="card-nav"><button data-action="previous-card" ${learnPosition === 0 ? "disabled" : ""}>← 上一张</button><button data-action="next-card" ${learnPosition === lessonWords.length - 1 ? "disabled" : ""}>下一张 →</button></div>` : ""}<div class="record-panel">${recordingUrl ? `<div class="record-status">单词跟读录音（未上传）</div><audio controls src="${recordingUrl}"></audio>` : ""}${sentenceRecordingUrl ? `<div class="record-status recording-gap">例句跟读录音（未上传）</div><audio controls src="${sentenceRecordingUrl}"></audio>` : ""}${!recordingUrl && !sentenceRecordingUrl ? `<div class="record-status">首次跟读时，浏览器会请求麦克风权限。</div>` : ""}</div>`;
   attachWordSpeaker(word.id);
   autoPlayWord(word.id, "learn");
 }
@@ -275,7 +292,8 @@ function renderQuiz() {
   if (quizIndex >= quiz.length) return renderQuizResult();
   const item = quiz[quizIndex];
   const word = catalog.find(entry => entry.id === item.wordId);
-  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 综合检测 ${quizIndex + 1}/5</div><div class="progress-track" style="margin:14px 0 24px"><div class="progress-fill" style="width:${(quizIndex + 1) * 20}%"></div></div><article class="quiz-card"><span class="tag">${item.label}</span><h2>${item.prompt}</h2>${item.type === "audio" ? `<button class="secondary" data-action="play-word" data-id="${item.wordId}">🔊 播放发音</button>` : ""}${item.options ? `<div class="options">${item.options.map((option, index) => `<button class="option ${selectedAnswer === option ? "selected" : ""}" data-action="select-option" data-index="${index}">${option}</button>`).join("")}</div>` : ""}${item.type === "spelling" ? `<input id="spelling-input" class="spell-input" placeholder="输入英文单词" value="${spellingAnswer}" autocomplete="off" />` : ""}${item.type === "voice" ? `${renderScene(word)}<div class="button-row"><button class="secondary" data-action="play-word" data-id="${item.wordId}">🔊 听一遍</button><button class="primary" data-action="record-quiz" data-id="${item.wordId}">${recordingWordId === item.wordId ? "正在录音…" : "🎙️ 开始跟读"}</button></div>${recordingUrls[item.wordId] ? `<div class="record-panel"><div class="record-status">你的离线录音</div><audio controls src="${recordingUrls[item.wordId]}"></audio></div>` : ""}` : `<button class="primary wide" data-action="submit-answer">确认答案</button>`}</article>`;
+  const contextExample = item.type === "contextMeaning" ? `<div class="quiz-example">${highlightTarget(item.example, item.word)}</div>` : "";
+  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 综合检测 ${quizIndex + 1}/5</div><div class="progress-track" style="margin:14px 0 24px"><div class="progress-fill" style="width:${(quizIndex + 1) * 20}%"></div></div><article class="quiz-card"><span class="tag">${item.label}</span><h2>${item.prompt}</h2>${contextExample}${item.type === "audio" ? `<button class="secondary" data-action="play-word" data-id="${item.wordId}">🔊 播放发音</button>` : ""}${item.options ? `<div class="options">${item.options.map((option, index) => `<button class="option ${selectedAnswer === option ? "selected" : ""}" data-action="select-option" data-index="${index}">${option}</button>`).join("")}</div>` : ""}${item.type === "spelling" ? `<input id="spelling-input" class="spell-input" placeholder="输入英文单词" value="${spellingAnswer}" autocomplete="off" />` : ""}${item.type === "voice" ? `${renderScene(word)}<div class="button-row"><button class="secondary" data-action="play-word" data-id="${item.wordId}">🔊 听一遍</button><button class="primary" data-action="record-quiz" data-id="${item.wordId}">${recordingWordId === item.wordId ? "正在录音…" : "🎙️ 开始跟读"}</button></div>${recordingUrls[item.wordId] ? `<div class="record-panel"><div class="record-status">你的离线录音</div><audio controls src="${recordingUrls[item.wordId]}"></audio></div>` : ""}` : `<button class="primary wide" data-action="submit-answer">确认答案</button>`}</article>`;
 }
 function commitAnswer(value) {
   const item = quiz[quizIndex];
@@ -296,7 +314,7 @@ function renderQuizResult() {
 function renderWord() {
   const word = catalog.find(item => item.id === Number(routeState.id));
   if (!word) return navigate("course");
-  app.innerHTML = `<div class="eyebrow">WORD #${(`000${word.id}`).slice(-3)}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">🎙️ 跟读单词</button></div><div class="word-meta"><span class="phonetic">音标 ${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">常见中文意思：${word.meaning}</div>${renderScene(word, true)}<div class="tip">💡 ${word.tip}</div><p class="muted" style="font-size:11px;margin-top:14px">词表原文：${word.raw} · 自然拼读分组：${word.phonicsGroup}</p></article><div class="button-row learn-actions"><button class="ghost wide" data-route="course">返回课程</button></div>`;
+  app.innerHTML = `<div class="eyebrow">WORD #${(`000${word.id}`).slice(-3)}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">🎙️ 跟读单词</button></div><div class="word-meta"><span class="phonetic">${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">${word.meaning}</div>${renderScene(word, true)}<div class="tip">💡 ${word.tip}</div><p class="muted" style="font-size:11px;margin-top:14px">词表原文：${word.raw} · 自然拼读分组：${word.phonicsGroup}</p></article><div class="button-row learn-actions"><button class="ghost wide" data-route="course">返回课程</button></div>`;
   attachWordSpeaker(word.id);
   autoPlayWord(word.id, "word");
 }
@@ -376,10 +394,13 @@ document.addEventListener("click", event => {
     return renderGrowth();
   }
   if (action === "record-word") return followWord(Number(target.dataset.id));
-  if (action === "remember-word") { const word = lessonWords[learnPosition]; if (!state.voiceAttempts.includes(word.id) || !(state.sentenceVoiceAttempts || []).includes(word.id)) return; state.learned = core.addUnique(state.learned, word.id); state = core.scheduleReview(state, word.id); saveState(); learnPosition += 1; return renderLearn(); }
+  if (action === "remember-word") { const word = lessonWords[learnPosition]; if (!state.voiceAttempts.includes(word.id) || !(state.sentenceVoiceAttempts || []).includes(word.id)) return; state.learned = core.addUnique(state.learned, word.id); state = core.scheduleReview(state, word.id); saveState(); playCompletionSound(); showToast("✨ 星词收集成功！"); learnPosition += 1; return renderLearn(); }
+  if (action === "review-lesson") { lessonReviewMode = true; learnPosition = 0; return renderLearn(); }
+  if (action === "previous-card") { if (learnPosition > 0) learnPosition -= 1; return renderLearn(); }
+  if (action === "next-card") { if (learnPosition < lessonWords.length - 1) learnPosition += 1; return renderLearn(); }
   if (action === "start-review") return startReview();
   if (action === "reveal-review") { reviewRevealed = true; return renderReview(); }
-  if (action === "grade-review") { const word = reviewQueue[reviewIndex]; state = core.gradeReview(state, word.id, target.dataset.result === "good"); saveState(); reviewIndex += 1; reviewRevealed = false; return renderReview(); }
+  if (action === "grade-review") { const word = reviewQueue[reviewIndex]; const remembered = target.dataset.result === "good"; state = core.gradeReview(state, word.id, remembered); saveState(); showToast(`已安排：${reviewDelayText(state.reviews[word.id])}`); reviewIndex += 1; reviewRevealed = false; return renderReview(); }
   if (action === "start-quiz") return startQuiz();
   if (action === "select-option") { selectedAnswer = quiz[quizIndex].options[Number(target.dataset.index)]; return renderQuiz(); }
   if (action === "submit-answer") { const value = quiz[quizIndex].type === "spelling" ? spellingAnswer.trim().toLowerCase() : selectedAnswer; if (!value) return showToast("请先作答"); return commitAnswer(value); }
@@ -401,6 +422,6 @@ document.addEventListener("input", event => {
 window.addEventListener("online", () => { document.querySelector("#offline-badge").textContent = "已联网"; });
 window.addEventListener("offline", () => { document.querySelector("#offline-badge").textContent = "离线可用"; });
 window.addEventListener("beforeunload", stopActiveRecording);
-if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=21", { updateViaCache: "none" }).catch(() => {});
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=22", { updateViaCache: "none" }).catch(() => {});
 saveState();
 navigate("home");
