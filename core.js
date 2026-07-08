@@ -44,10 +44,12 @@
     ];
   }
   function defaultState() {
-    return { learned: [], voiceAttempts: [], sentenceVoiceAttempts: [], keys: 0, starDust: 0, collection: [], lessonSize: 5, currentLesson: 0, activeLesson: 0, completedLessons: [], rewardedLessons: [], bestScores: {}, reviews: {} };
+    return { learned: [], voiceAttempts: [], sentenceVoiceAttempts: [], wordListens: [], sentenceListens: [], keys: 0, starDust: 0, collection: [], lessonSize: 5, currentLesson: 0, activeLesson: 0, completedLessons: [], rewardedLessons: [], bestScores: {}, reviews: {} };
   }
   function normalizeState(value) {
     const state = Object.assign(defaultState(), value || {});
+    state.wordListens = Array.isArray(state.wordListens) ? state.wordListens : [];
+    state.sentenceListens = Array.isArray(state.sentenceListens) ? state.sentenceListens : [];
     state.reviews = Object.assign({}, state.reviews || {});
     state.learned.forEach(id => { if (!state.reviews[id]) state.reviews[id] = { stage: 0, dueAt: Date.now(), correct: 0, wrong: 0 }; });
     return state;
