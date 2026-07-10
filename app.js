@@ -20,12 +20,18 @@ let quizIndex = 0;
 let quizAnswers = [];
 let selectedAnswer = "";
 let spellingAnswer = "";
+let quizVoiceReady = false;
 let mediaRecorder = null;
 let mediaStream = null;
 let recordingChunks = [];
 let recordingTimer = null;
 let recordingWordId = null;
 let recordingCallback = null;
+let recordingOptions = {};
+let recordingStats = null;
+let recordingAudioContext = null;
+let recordingAnalyser = null;
+let recordingMonitor = null;
 const recordingUrls = {};
 let reviewQueue = [];
 let reviewIndex = 0;
@@ -47,7 +53,8 @@ function loadState() {
 }
 function saveState(next = state) {
   state = core.normalizeState(next);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  catch { showToast("浏览器无法自动保存，请在成长页备份进度码"); }
   keyCount.textContent = state.keys;
   return state;
 }
@@ -59,6 +66,12 @@ function showToast(message) {
 }
 function stopActiveRecording() {
   clearTimeout(recordingTimer);
+  if (recordingMonitor) cancelAnimationFrame(recordingMonitor);
+  recordingMonitor = null;
+  if (recordingAudioContext) recordingAudioContext.close().catch(() => {});
+  recordingAudioContext = null;
+  recordingAnalyser = null;
+  recordingStats = null;
   if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
   if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
   mediaStream = null;
@@ -135,6 +148,22 @@ function renderExample(word) {
 }
 function progressPercent() { return Math.round(state.learned.length / catalog.length * 100); }
 function lessonSize() { return core.normalizeLessonSize(state.lessonSize); }
+function encodeProgressCode() {
+  return btoa(unescape(encodeURIComponent(JSON.stringify({ app: "wordie-505", version: 1, savedAt: Date.now(), state }))));
+}
+function importProgressCode(code) {
+  try {
+    const payload = JSON.parse(decodeURIComponent(escape(atob(String(code || "").trim()))));
+    if (payload.app !== "wordie-505" || !payload.state) throw new Error("bad code");
+    state = core.normalizeState(payload.state);
+    saveState();
+    showToast("学习进度已恢复");
+    return true;
+  } catch {
+    showToast("进度码无效，请检查是否复制完整");
+    return false;
+  }
+}
 
 function renderHome() {
   const active = state.activeLesson;
@@ -189,6 +218,22 @@ function startLesson(index) {
   lastAutoWordKey = "";
   navigate("learn", { lesson: index });
 }
+function continueAfterLessonReview() {
+  const totalLessons = core.lessonCount(catalog, lessonSize());
+  const completed = state.completedLessons.includes(lessonIndex);
+  if (completed) {
+    const next = Math.min(Math.max(state.currentLesson, lessonIndex + 1), totalLessons - 1);
+    if (next !== lessonIndex && next <= state.currentLesson) {
+      showToast(`进入第${next + 1}课`);
+      return startLesson(next);
+    }
+    showToast("已完成当前可学习课程");
+    return navigate("course");
+  }
+  lessonReviewMode = false;
+  learnPosition = learningPosition;
+  return renderLearn();
+}
 function highlightTarget(sentence, target) {
   const index = String(sentence).toLowerCase().indexOf(String(target).toLowerCase());
   if (index < 0) return sentence;
@@ -209,7 +254,12 @@ function renderLearn() {
   if (learnPosition >= lessonWords.length) {
     if (lessonReviewMode) learnPosition = lessonWords.length - 1;
     else {
-    app.innerHTML = `<div class="panel result-card"><div style="font-size:68px">🎯</div><h1>${lessonWords.length}个词已学习</h1><p class="muted">接下来完成五种检测。达到80分即可获得钥匙。</p><button class="primary wide" data-action="start-quiz">开始综合检测</button><button class="secondary wide review-lesson-button" data-action="review-lesson">翻阅本课单词卡</button></div>`;
+    const completed = state.completedLessons.includes(lessonIndex);
+    const totalLessons = core.lessonCount(catalog, lessonSize());
+    const next = Math.min(Math.max(state.currentLesson, lessonIndex + 1), totalLessons - 1);
+    app.innerHTML = completed
+      ? `<div class="panel result-card"><div style="font-size:68px">✅</div><h1>本课已完成</h1><p class="muted">这课已经检测通过，不需要重复检测。可以复习词卡，或直接进入已解锁的新课。</p><button class="primary wide" data-action="next-unlocked-lesson">${next !== lessonIndex && next <= state.currentLesson ? `学习第${next + 1}课` : "查看全部课程"}</button><button class="secondary wide review-lesson-button" data-action="review-lesson">翻阅本课单词卡</button></div>`
+      : `<div class="panel result-card"><div style="font-size:68px">🎯</div><h1>${lessonWords.length}个词已学习</h1><p class="muted">接下来完成五种检测。达到80分并完成有效跟读，才可获得钥匙。</p><button class="primary wide" data-action="start-quiz">开始综合检测</button><button class="secondary wide review-lesson-button" data-action="review-lesson">翻阅本课单词卡</button></div>`;
     return;
     }
   }
@@ -226,7 +276,8 @@ function renderLearn() {
   const sentenceRecordingUrl = recordingUrls[`sentence-${word.id}`];
   const cardNumber = lessonReviewMode ? reviewCursor + 1 : learnPosition + 1;
   const cardTotal = lessonReviewMode ? learnedPositions.length : lessonWords.length;
-  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · ${lessonReviewMode ? "已学词卡" : "新词"} ${cardNumber}/${cardTotal}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">${compatibilityMode ? "🎧 听词解锁" : (recordingWordId === word.id && mediaRecorder?.state === "recording" ? "现在读…" : "🎙️ 跟读单词")}</button></div><div class="word-meta"><span class="phonetic">${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">${word.meaning}</div>${renderScene(word, true, !lessonReviewMode, wordReady && sentenceReady, unlockCopy)}<div class="tip">🔑 ${word.tip}</div>${!lessonReviewMode && learnedPositions.length ? `<button class="review-learned wide" data-action="review-lesson">📚 已学词卡（${learnedPositions.length}）</button>` : ""}${lessonReviewMode ? `<div class="card-tools"><div class="card-nav"><button data-action="previous-card" ${reviewCursor <= 0 ? "disabled" : ""}>← 上一张</button><button data-action="next-card" ${reviewCursor < 0 || reviewCursor >= learnedPositions.length - 1 ? "disabled" : ""}>${reviewCursor >= learnedPositions.length - 1 ? "已到最后" : "下一张 →"}</button></div><button class="continue-learning wide" data-action="continue-learning">继续学习</button></div>` : ""}</article><div class="record-panel">${compatibilityMode ? `<div class="record-status compatibility-status">兼容模式：依次点击单词和例句的小喇叭即可解锁下一词。</div>` : recordingUrl ? `<div class="record-status">单词跟读录音（未上传）</div><audio controls src="${recordingUrl}"></audio>` : ""}${!compatibilityMode && sentenceRecordingUrl ? `<div class="record-status recording-gap">例句跟读录音（未上传）</div><audio controls src="${sentenceRecordingUrl}"></audio>` : ""}${!compatibilityMode && !recordingUrl && !sentenceRecordingUrl ? `<div class="record-status">首次跟读时，浏览器会请求麦克风权限。</div>` : ""}</div>`;
+  const completedLesson = state.completedLessons.includes(lessonIndex);
+  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · ${lessonReviewMode ? "已学词卡" : "新词"} ${cardNumber}/${cardTotal}</div><div class="step-dots">${lessonWords.map((_, index) => `<i class="${index <= learnPosition ? "active" : ""}"></i>`).join("")}</div><article class="learning-card"><div class="word-heading"><h1 class="word-title">${word.word}</h1><button class="word-speaker" data-action="play-word" data-id="${word.id}" aria-label="播放单词发音">🔊</button><button class="inline-follow" data-action="record-word" data-id="${word.id}">${compatibilityMode ? "🎧 听词解锁" : (recordingWordId === word.id && mediaRecorder?.state === "recording" ? "现在读…" : "🎙️ 跟读单词")}</button></div><div class="word-meta"><span class="phonetic">${word.phonetic}</span><span class="word-pos">词性 ${word.pos}</span></div><div class="meaning">${word.meaning}</div>${renderScene(word, true, !lessonReviewMode, wordReady && sentenceReady, unlockCopy)}<div class="tip">🔑 ${word.tip}</div>${!lessonReviewMode && learnedPositions.length ? `<button class="review-learned wide" data-action="review-lesson">📚 已学词卡（${learnedPositions.length}）</button>` : ""}${lessonReviewMode ? `<div class="card-tools"><div class="card-nav"><button data-action="previous-card" ${reviewCursor <= 0 ? "disabled" : ""}>← 上一张</button><button data-action="next-card" ${reviewCursor < 0 || reviewCursor >= learnedPositions.length - 1 ? "disabled" : ""}>${reviewCursor >= learnedPositions.length - 1 ? "已到最后" : "下一张 →"}</button></div><button class="continue-learning wide" data-action="continue-learning">${completedLesson ? "学习新课" : "继续学习"}</button></div>` : ""}</article><div class="record-panel">${compatibilityMode ? `<div class="record-status compatibility-status">兼容模式：依次点击单词和例句的小喇叭即可解锁下一词。</div>` : recordingUrl ? `<div class="record-status">单词跟读录音（未上传）</div><audio controls src="${recordingUrl}"></audio>` : ""}${!compatibilityMode && sentenceRecordingUrl ? `<div class="record-status recording-gap">例句跟读录音（未上传）</div><audio controls src="${sentenceRecordingUrl}"></audio>` : ""}${!compatibilityMode && !recordingUrl && !sentenceRecordingUrl ? `<div class="record-status">首次跟读时，浏览器会请求麦克风权限。</div>` : ""}</div>`;
   attachWordSpeaker(word.id);
   autoPlayWord(word.id, "learn");
 }
@@ -245,28 +296,80 @@ async function recordWord(wordId, callback, duration = 2600, preparedStream = nu
     recordingChunks = [];
     recordingWordId = wordId;
     recordingCallback = callback || null;
+    recordingOptions = typeof duration === "object" ? duration : {};
+    const recordDuration = typeof duration === "object" ? (duration.duration || 2600) : duration;
+    recordingStats = { startedAt: Date.now(), activeFrames: 0, maxRms: 0 };
     mediaRecorder = new MediaRecorder(mediaStream);
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    const canMeasureVoice = recordingOptions.validateSpeech && AudioContextCtor;
+    if (canMeasureVoice) {
+      recordingAudioContext = new AudioContextCtor();
+      const source = recordingAudioContext.createMediaStreamSource(mediaStream);
+      recordingAnalyser = recordingAudioContext.createAnalyser();
+      recordingAnalyser.fftSize = 1024;
+      source.connect(recordingAnalyser);
+      const data = new Uint8Array(recordingAnalyser.fftSize);
+      const threshold = recordingOptions.rmsThreshold || 7;
+      const monitor = () => {
+        if (!recordingAnalyser || mediaRecorder?.state !== "recording") return;
+        recordingAnalyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let index = 0; index < data.length; index += 1) {
+          const value = data[index] - 128;
+          sum += value * value;
+        }
+        const rms = Math.sqrt(sum / data.length);
+        recordingStats.maxRms = Math.max(recordingStats.maxRms, rms);
+        if (rms >= threshold) recordingStats.activeFrames += 1;
+        recordingMonitor = requestAnimationFrame(monitor);
+      };
+      recordingMonitor = requestAnimationFrame(monitor);
+    }
     mediaRecorder.ondataavailable = event => { if (event.data.size) recordingChunks.push(event.data); };
     mediaRecorder.onstop = () => {
+      if (recordingMonitor) cancelAnimationFrame(recordingMonitor);
+      recordingMonitor = null;
+      if (recordingAudioContext) recordingAudioContext.close().catch(() => {});
+      recordingAudioContext = null;
+      recordingAnalyser = null;
       const blob = new Blob(recordingChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+      const elapsed = Date.now() - (recordingStats?.startedAt || Date.now());
+      const enoughLength = elapsed >= (recordingOptions.minDuration || 1200) && blob.size >= (recordingOptions.minBytes || 1800);
+      const enoughVoice = !recordingOptions.validateSpeech || (
+        enoughLength &&
+        (!canMeasureVoice || (
+          (recordingStats?.activeFrames || 0) >= (recordingOptions.minActiveFrames || 6) &&
+          (recordingStats?.maxRms || 0) >= (recordingOptions.rmsThreshold || 7)
+        ))
+      );
       if (recordingUrls[wordId]) URL.revokeObjectURL(recordingUrls[wordId]);
       recordingUrls[wordId] = URL.createObjectURL(blob);
-      if (typeof wordId === "number") state.voiceAttempts = core.addUnique(state.voiceAttempts, wordId);
-      else if (String(wordId).startsWith("sentence-")) state.sentenceVoiceAttempts = core.addUnique(state.sentenceVoiceAttempts || [], Number(String(wordId).replace("sentence-", "")));
-      saveState();
+      if (enoughVoice) {
+        if (typeof wordId === "number") state.voiceAttempts = core.addUnique(state.voiceAttempts, wordId);
+        else if (String(wordId).startsWith("sentence-")) state.sentenceVoiceAttempts = core.addUnique(state.sentenceVoiceAttempts || [], Number(String(wordId).replace("sentence-", "")));
+        saveState();
+      }
       if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
       mediaStream = null;
       recordingWordId = null;
       const done = recordingCallback;
       recordingCallback = null;
-      showToast("录音完成，可立即回放");
-      if (done) done(); else if (routeState.name === "word") renderWord(); else renderLearn();
+      const failedMessage = "没有检测到有效跟读，请靠近手机再读一次";
+      showToast(enoughVoice ? "录音完成，可立即回放" : failedMessage);
+      recordingOptions = {};
+      recordingStats = null;
+      if (done && enoughVoice) done();
+      else if (routeState.name === "word") renderWord();
+      else if (routeState.name === "quiz") renderQuiz();
+      else renderLearn();
     };
     mediaRecorder.start();
     if (routeState.name === "learn") renderLearn(); else if (routeState.name === "word") renderWord(); else renderQuiz();
-    recordingTimer = setTimeout(() => { if (mediaRecorder?.state === "recording") mediaRecorder.stop(); }, duration);
+    recordingTimer = setTimeout(() => { if (mediaRecorder?.state === "recording") mediaRecorder.stop(); }, recordDuration);
   } catch (error) {
     recordingWordId = null;
+    recordingOptions = {};
+    recordingStats = null;
     showToast(error.name === "NotAllowedError" ? "请在浏览器设置中允许麦克风" : "无法启动录音，请检查麦克风");
   }
 }
@@ -285,16 +388,21 @@ async function prepareMicrophone() {
     compatibilityMode = true;
     showToast("录音不可用，已切换听音解锁模式");
     if (routeState.name === "learn") renderLearn();
+    if (routeState.name === "quiz") renderQuiz();
     return null;
   }
 }
-async function followWord(wordId, callback) {
+async function followWord(wordId, callback, options = {}) {
+  if (options.requireRecording && compatibilityMode) {
+    showToast("检测需要真实录音，请换支持麦克风的浏览器打开");
+    return;
+  }
   const preparedStream = await prepareMicrophone();
   if (!preparedStream) return;
   showToast("请先听标准单词发音");
   if (await playWord(wordId)) {
     showToast("现在请读单词");
-    return recordWord(wordId, callback, 2600, preparedStream);
+    return recordWord(options.recordId || wordId, callback, options.recording || 2600, preparedStream);
   }
   preparedStream.getTracks().forEach(track => track.stop());
 }
@@ -311,7 +419,7 @@ async function recordSentence(wordId) {
 
 function startQuiz() {
   quiz = core.buildQuiz(catalog, lessonIndex, lessonSize());
-  quizIndex = 0; quizAnswers = []; selectedAnswer = ""; spellingAnswer = "";
+  quizIndex = 0; quizAnswers = []; selectedAnswer = ""; spellingAnswer = ""; quizVoiceReady = false;
   navigate("quiz", { lesson: lessonIndex });
 }
 function renderQuiz() {
@@ -319,22 +427,27 @@ function renderQuiz() {
   const item = quiz[quizIndex];
   const word = catalog.find(entry => entry.id === item.wordId);
   const contextExample = item.type === "contextMeaning" ? `<div class="quiz-example">${highlightTarget(item.example, item.word)}</div>` : "";
-  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 综合检测 ${quizIndex + 1}/5</div><div class="progress-track" style="margin:14px 0 24px"><div class="progress-fill" style="width:${(quizIndex + 1) * 20}%"></div></div><article class="quiz-card"><span class="tag">${item.label}</span><h2>${item.prompt}</h2>${contextExample}${item.type === "audio" ? `<button class="secondary" data-action="play-word" data-id="${item.wordId}">🔊 播放发音</button>` : ""}${item.options ? `<div class="options">${item.options.map((option, index) => `<button class="option ${selectedAnswer === option ? "selected" : ""}" data-action="select-option" data-index="${index}">${option}</button>`).join("")}</div>` : ""}${item.type === "spelling" ? `<input id="spelling-input" class="spell-input" placeholder="输入英文单词" value="${spellingAnswer}" autocomplete="off" />` : ""}${item.type === "voice" ? `${renderScene(word)}<div class="button-row"><button class="secondary" data-action="play-word" data-id="${item.wordId}">🔊 听一遍</button><button class="primary" data-action="record-quiz" data-id="${item.wordId}">${recordingWordId === item.wordId ? "正在录音…" : "🎙️ 开始跟读"}</button></div>${recordingUrls[item.wordId] ? `<div class="record-panel"><div class="record-status">你的离线录音</div><audio controls src="${recordingUrls[item.wordId]}"></audio></div>` : ""}` : `<button class="primary wide" data-action="submit-answer">确认答案</button>`}</article>`;
+  const voiceDisabled = item.type === "voice" && compatibilityMode;
+  const voiceKey = `quiz-${item.wordId}`;
+  const voiceRecording = recordingUrls[voiceKey];
+  const voiceReady = quizVoiceReady && !!voiceRecording;
+  app.innerHTML = `<div class="eyebrow">第${lessonIndex + 1}课 · 综合检测 ${quizIndex + 1}/5</div><div class="progress-track" style="margin:14px 0 24px"><div class="progress-fill" style="width:${(quizIndex + 1) * 20}%"></div></div><article class="quiz-card"><span class="tag">${item.label}</span><h2>${item.prompt}</h2>${contextExample}${item.type === "audio" ? `<button class="secondary" data-action="play-word" data-id="${item.wordId}">🔊 播放发音</button>` : ""}${item.options ? `<div class="options">${item.options.map((option, index) => `<button class="option ${selectedAnswer === option ? "selected" : ""}" data-action="select-option" data-index="${index}">${option}</button>`).join("")}</div>` : ""}${item.type === "spelling" ? `<input id="spelling-input" class="spell-input" placeholder="输入英文单词" value="${spellingAnswer}" autocomplete="off" />` : ""}${item.type === "voice" ? `${renderScene(word)}<p class="muted quiz-voice-note">${voiceDisabled ? "当前打开方式不支持检测录音；本题不会自动过关，请用支持麦克风的浏览器打开。" : "请听完标准发音后，对着麦克风读出单词；录完可回放，不满意可以重新录。"}</p><div class="button-row"><button class="secondary" data-action="play-word" data-id="${item.wordId}">🔊 听一遍</button><button class="primary" data-action="record-quiz" data-id="${item.wordId}" ${voiceDisabled ? "disabled" : ""}>${recordingWordId === voiceKey ? "正在录音…" : voiceReady ? "🎙️ 重新录音" : "🎙️ 开始跟读"}</button></div>${voiceRecording ? `<div class="record-panel"><div class="record-status">本次检测录音：请先回放，满意后再提交</div><audio controls src="${voiceRecording}"></audio><button class="primary wide" data-action="submit-quiz-voice" ${voiceReady ? "" : "disabled"}>满意，提交跟读</button></div>` : ""}` : `<button class="primary wide" data-action="submit-answer">确认答案</button>`}</article>`;
 }
 function commitAnswer(value) {
   const item = quiz[quizIndex];
   quizAnswers.push({ index: quizIndex, correct: String(value).toLowerCase() === String(item.answer).toLowerCase() });
-  quizIndex += 1; selectedAnswer = ""; spellingAnswer = ""; renderQuiz();
+  quizIndex += 1; selectedAnswer = ""; spellingAnswer = ""; quizVoiceReady = false; renderQuiz();
 }
 function renderQuizResult() {
   const correct = quizAnswers.filter(answer => answer.correct).length;
   const score = correct * 20;
   const previousRewarded = state.rewardedLessons.includes(lessonIndex);
-  state = core.finishLesson(state, { score, voiceCompleted: quizAnswers.some(answer => answer.index === 4 && answer.correct), lessonIndex, lessonWordIds: lessonWords.map(word => word.id), totalLessons: core.lessonCount(catalog, lessonSize()) });
+  const voiceCompleted = quizAnswers.some(answer => answer.index === 4 && answer.correct);
+  state = core.finishLesson(state, { score, voiceCompleted, lessonIndex, lessonWordIds: lessonWords.map(word => word.id), totalLessons: core.lessonCount(catalog, lessonSize()) });
   saveState();
-  const passed = score >= 80;
+  const passed = score >= 80 && voiceCompleted;
   const rewarded = !previousRewarded && state.rewardedLessons.includes(lessonIndex);
-  app.innerHTML = `<div class="panel result-card"><div style="font-size:64px">${passed ? "🎉" : "🧩"}</div><h1>${passed ? "检测达标！" : "还差一点，来次短补练"}</h1><div class="result-score">${score}</div><p class="${passed ? "success" : "warning"}">${passed ? rewarded ? "学习钥匙＋1。它来自你完成的学习。" : "本课钥匙已领取，成绩已更新。" : `答对${correct}/5，重新检测会帮助巩固。`}</p><div class="button-row" style="justify-content:center;margin-top:18px"><button class="primary" data-action="result-next">${passed ? "去开盲盒" : "重新检测"}</button><button class="ghost" data-route="home">返回首页</button></div></div>`;
+  app.innerHTML = `<div class="panel result-card"><div style="font-size:64px">${passed ? "🎉" : "🧩"}</div><h1>${passed ? "检测达标！" : "还差一点，来次短补练"}</h1><div class="result-score">${score}</div><p class="${passed ? "success" : "warning"}">${passed ? rewarded ? "学习钥匙＋1。它来自你完成的学习。" : "本课钥匙已领取，成绩已更新。" : voiceCompleted ? `答对${correct}/5，重新检测会帮助巩固。` : "语音跟读还没有有效完成，不能解锁下一课。"}</p><div class="button-row" style="justify-content:center;margin-top:18px"><button class="primary" data-action="result-next">${passed ? "去开盲盒" : "重新检测"}</button><button class="ghost" data-route="home">返回首页</button></div></div>`;
 }
 
 function renderWord() {
@@ -416,7 +529,7 @@ function renderGrowth() {
   const recent = catalog.filter(word => state.learned.includes(word.id)).slice(-20).reverse();
   const totalLessons = core.lessonCount(catalog, lessonSize());
   const sizeOptions = [5, 10, 15, 20].map(size => `<button class="size-option ${lessonSize() === size ? "active" : ""}" data-action="set-lesson-size" data-size="${size}">${size}个</button>`).join("");
-  app.innerHTML = `<div class="eyebrow">LEARNING GROWTH</div><h1 class="page-title">505词成长记录</h1><div class="panel"><div style="display:flex;justify-content:space-between;margin-bottom:10px"><b>总进度</b><b>${progressPercent()}%</b></div><div class="progress-track"><div class="progress-fill" style="width:${progressPercent()}%"></div></div></div><div class="panel section"><h2>每次学习多少词</h2><div class="lesson-size-options">${sizeOptions}</div><p class="muted setting-note">调整后重新编排课程；已学习单词、钥匙和收藏都会保留。</p></div><div class="grid-4 section"><div class="stat-card"><small>已学习</small><strong>${state.learned.length}</strong><small>共505词</small></div><div class="stat-card"><small>已完成课程</small><strong>${state.completedLessons.length}</strong><small>共${totalLessons}课</small></div><div class="stat-card"><small>检测最佳</small><strong>${scores.length ? Math.max(...scores) : 0}</strong><small>80分达标</small></div><div class="stat-card"><small>待复习</small><strong>${state.learned.length}</strong><small>持续巩固中</small></div></div><button class="secondary wide section" data-route="course">查看全部${totalLessons}课</button><div class="panel section"><h2>最近学习</h2>${recent.length ? recent.map(word => `<button class="word-row wide" style="border-width:0 0 1px;background:transparent;text-align:left" data-action="open-word" data-id="${word.id}"><span><b>${word.word} · ${word.meaning}</b><small>${word.phonetic} · 点击查看卡片</small></span><span class="status learned">待巩固</span></button>`).join("") : `<div class="empty">完成第一课后，这里会出现最近学习的单词。</div>`}</div><button class="ghost wide section" data-action="reset-state">重置全部学习进度</button>`;
+  app.innerHTML = `<div class="eyebrow">LEARNING GROWTH</div><h1 class="page-title">505词成长记录</h1><div class="panel"><div style="display:flex;justify-content:space-between;margin-bottom:10px"><b>总进度</b><b>${progressPercent()}%</b></div><div class="progress-track"><div class="progress-fill" style="width:${progressPercent()}%"></div></div></div><div class="panel section"><h2>每次学习多少词</h2><div class="lesson-size-options">${sizeOptions}</div><p class="muted setting-note">调整后重新编排课程；已学习单词、钥匙和收藏都会保留。</p></div><div class="grid-4 section"><div class="stat-card"><small>已学习</small><strong>${state.learned.length}</strong><small>共505词</small></div><div class="stat-card"><small>已完成课程</small><strong>${state.completedLessons.length}</strong><small>共${totalLessons}课</small></div><div class="stat-card"><small>检测最佳</small><strong>${scores.length ? Math.max(...scores) : 0}</strong><small>80分达标</small></div><div class="stat-card"><small>待复习</small><strong>${state.learned.length}</strong><small>持续巩固中</small></div></div><div class="panel section progress-backup"><h2>学习记录备份</h2><p class="muted">正常情况下会自动保存；如果换设备、换浏览器或清缓存，请用进度码恢复。</p><textarea id="progress-code" readonly>${encodeProgressCode()}</textarea><div class="button-row"><button class="secondary" data-action="copy-progress">复制进度码</button><button class="ghost" data-action="import-progress">导入进度码</button></div></div><button class="secondary wide section" data-route="course">查看全部${totalLessons}课</button><div class="panel section"><h2>最近学习</h2>${recent.length ? recent.map(word => `<button class="word-row wide" style="border-width:0 0 1px;background:transparent;text-align:left" data-action="open-word" data-id="${word.id}"><span><b>${word.word} · ${word.meaning}</b><small>${word.phonetic} · 点击查看卡片</small></span><span class="status learned">待巩固</span></button>`).join("") : `<div class="empty">完成第一课后，这里会出现最近学习的单词。</div>`}</div><button class="ghost wide section" data-action="reset-state">重置全部学习进度</button>`;
 }
 
 document.addEventListener("click", event => {
@@ -443,15 +556,19 @@ document.addEventListener("click", event => {
   if (action === "review-lesson") { const learned = lessonWords.map((word, index) => state.learned.includes(word.id) ? index : -1).filter(index => index >= 0); if (!learned.length) return showToast("先学会一个单词再翻阅"); lessonReviewMode = true; learnPosition = learned[0]; return renderLearn(); }
   if (action === "previous-card") { const learned = lessonWords.map((word, index) => state.learned.includes(word.id) ? index : -1).filter(index => index >= 0); const cursor = learned.indexOf(learnPosition); if (cursor > 0) learnPosition = learned[cursor - 1]; return renderLearn(); }
   if (action === "next-card") { const learned = lessonWords.map((word, index) => state.learned.includes(word.id) ? index : -1).filter(index => index >= 0); const cursor = learned.indexOf(learnPosition); if (cursor >= 0 && cursor < learned.length - 1) learnPosition = learned[cursor + 1]; return renderLearn(); }
-  if (action === "continue-learning") { lessonReviewMode = false; learnPosition = learningPosition; return renderLearn(); }
+  if (action === "continue-learning") return continueAfterLessonReview();
+  if (action === "next-unlocked-lesson") return continueAfterLessonReview();
   if (action === "start-review") return startReview();
   if (action === "reveal-review") { reviewRevealed = true; return renderReview(); }
   if (action === "grade-review") { const word = reviewQueue[reviewIndex]; const remembered = target.dataset.result === "good"; state = core.gradeReview(state, word.id, remembered); saveState(); showToast(`已安排：${reviewDelayText(state.reviews[word.id])}`); reviewIndex += 1; reviewRevealed = false; return renderReview(); }
   if (action === "start-quiz") return startQuiz();
   if (action === "select-option") { selectedAnswer = quiz[quizIndex].options[Number(target.dataset.index)]; return renderQuiz(); }
   if (action === "submit-answer") { const value = quiz[quizIndex].type === "spelling" ? spellingAnswer.trim().toLowerCase() : selectedAnswer; if (!value) return showToast("请先作答"); return commitAnswer(value); }
-  if (action === "record-quiz") return followWord(Number(target.dataset.id), () => commitAnswer("participated"));
-  if (action === "result-next") return quizAnswers.filter(answer => answer.correct).length >= 4 ? navigate("box") : startQuiz();
+  if (action === "record-quiz") { const id = Number(target.dataset.id); const voiceKey = `quiz-${id}`; quizVoiceReady = false; return followWord(id, () => { quizVoiceReady = true; showToast("录音已完成，请回放确认"); renderQuiz(); }, { requireRecording: true, recordId: voiceKey, recording: { duration: 3200, validateSpeech: true, minDuration: 1400, minBytes: 2200, minActiveFrames: 8, rmsThreshold: 7 } }); }
+  if (action === "submit-quiz-voice") { if (!quizVoiceReady) return showToast("请先完成有效录音"); return commitAnswer("participated"); }
+  if (action === "result-next") return quizAnswers.filter(answer => answer.correct).length >= 4 && quizAnswers.some(answer => answer.index === 4 && answer.correct) ? navigate("box") : startQuiz();
+  if (action === "copy-progress") { const code = encodeProgressCode(); const box = document.querySelector("#progress-code"); if (box) { box.value = code; box.select(); } return navigator.clipboard?.writeText(code).then(() => showToast("进度码已复制")).catch(() => showToast("请手动复制进度码")); }
+  if (action === "import-progress") { const code = prompt("请粘贴学习进度码"); if (code && importProgressCode(code)) return renderGrowth(); return; }
   if (action === "open-box") return openBlindBox();
   if (action === "go-collection") return navigate("collection");
   if (action === "open-graduation") return graduationEligible() ? navigate("graduation", { preview: false }) : showToast("完成505词和全部课程检测后解锁");
@@ -469,6 +586,6 @@ window.addEventListener("online", () => { document.querySelector("#offline-badge
 window.addEventListener("offline", () => { document.querySelector("#offline-badge").textContent = "离线可用"; });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && routeState.name === "review" && reviewIndex >= reviewQueue.length) { const due = core.dueReviewIds(state); if (due.length) { reviewQueue = due.map(id => catalog.find(word => word.id === id)).filter(Boolean).slice(0, 20); reviewIndex = 0; reviewRevealed = false; renderReview(); } } });
 window.addEventListener("beforeunload", stopActiveRecording);
-if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=30", { updateViaCache: "none" }).catch(() => {});
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("./sw.js?v=32", { updateViaCache: "none" }).catch(() => {});
 saveState();
 navigate("home");
